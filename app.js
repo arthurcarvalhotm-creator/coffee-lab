@@ -110,7 +110,14 @@
     for (const g of (state.graos || [])) {
       if (!g.foto && g.id) {
         const f = await CafeFotoStore.get(g.id);
-        if (f) { g.foto = f; mudou = true; }
+        if (f) {
+          g.foto = f;
+          mudou = true;
+        } else if (g.catalogoId && typeof CAFE_FOTOS !== 'undefined' && CAFE_FOTOS[g.catalogoId]) {
+          g.foto = CAFE_FOTOS[g.catalogoId];
+          CafeFotoStore.set(g.id, g.foto);
+          mudou = true;
+        }
       } else if (g.foto && g.id) {
         CafeFotoStore.set(g.id, g.foto);
       }
@@ -123,7 +130,13 @@
     if (force || (state.config.catalogoVersao || 0) < DB.CATALOGO_VERSAO) {
       DB.catalogo.forEach((c) => {
         if (state.graos.some((g) => g.catalogoId === c.catalogoId)) return;
-        state.graos.push({ ...c, id: uid(), criadoEm: new Date().toISOString(), dataTorra: '' }); n++;
+        const foto = (typeof CAFE_FOTOS !== 'undefined' && CAFE_FOTOS[c.catalogoId]) || c.foto || '';
+        const novo = { ...c, id: uid(), criadoEm: new Date().toISOString(), dataTorra: '' };
+        if (foto) {
+          novo.foto = foto;
+          CafeFotoStore.set(novo.id, foto);
+        }
+        state.graos.push(novo); n++;
       });
       DB.moedoresModelo.filter((mm) => mm.id).forEach((mm) => {
         if (state.moedores.some((x) => x.modeloId === mm.id)) return;
@@ -422,7 +435,7 @@
       </div>
       <div class="stats" style="margin-top:14px">
         <div class="stat"><span class="lbl">Extrações</span><div class="hero-num">${total}</div></div>
-        <div class="stat"><span class="lbl">Grãos ativos</span><div class="hero-num">${graosAtivos.length}</div></div>
+        <div class="stat"><span class="lbl">Grãos do catálogo</span><div class="hero-num">${graosAtivos.length}</div></div>
         <div class="stat"><span class="lbl">Receitas calibradas</span><div class="hero-num">${calibradas}</div></div>
         <div class="stat"><span class="lbl">Tentativas até calibrar</span><div class="hero-num">${mediaTent}</div></div>
       </div>
