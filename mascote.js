@@ -134,5 +134,6 @@
   }
 
   window.Mascote = { svg, card, porCafeina, porExtracao, porLatte, NIVEIS, nivelPorNota, nivelExtracao, escala,
- HUMORES: Object.keys(HUMORES), nome: 'Pingo' };
+    HUMORES: Object.keys(HUMORES), nome: 'Pingo' };
+  window.Pingo = window.Mascote;
 })();

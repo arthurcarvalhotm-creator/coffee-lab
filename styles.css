@@ -705,3 +705,120 @@ h3 .badge, .t .badge { vertical-align: middle; }
   font-weight: 700;
 }
 
+/* ---------- Boas-Vindas e Tutorial (Pingo) ---------- */
+.tut-welcome-body {
+  margin: 6px 0 12px;
+}
+.tut-checkbox-lbl {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: .88rem;
+  color: var(--text-2);
+  user-select: none;
+}
+.tut-checkbox-lbl input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.tut-step-badge {
+  font-size: .85rem;
+  font-weight: 700;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.tut-progress-bar {
+  height: 4px;
+  background: var(--surface-2);
+  border-radius: 999px;
+  overflow: hidden;
+  margin: 2px 0 14px;
+}
+.tut-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width .25s ease;
+}
+.tut-breadcrumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: .78rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  margin-bottom: 8px;
+}
+.tut-title {
+  margin: 0 0 12px;
+  font-size: 1.15rem;
+  color: var(--text);
+}
+.tut-mockup-wrapper {
+  margin: 6px 0 10px;
+}
+.tut-card-mock {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,.03);
+}
+.tut-tabs-mock {
+  display: flex;
+  gap: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 4px;
+}
+.tut-tab-btn {
+  flex: 1;
+  text-align: center;
+  padding: 6px 8px;
+  font-size: .8rem;
+  font-weight: 600;
+  border-radius: 8px;
+  color: var(--muted);
+}
+.tut-tab-btn.on {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.tut-dots {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 0 6px;
+}
+.tut-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  border: 0;
+  background: var(--border);
+  padding: 0;
+  cursor: pointer;
+  transition: all .2s ease;
+}
+.tut-dot.on {
+  width: 22px;
+  background: var(--accent);
+}
+.tut-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  margin-top: 10px;
+}
+

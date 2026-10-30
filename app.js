@@ -1955,7 +1955,7 @@ Extraído no Laboratório de Cafeteria 🧪☕`;
     $('#title').textContent = 'Mais';
     view.innerHTML = `<div class="list">
       <div class="item" onclick="location.hash='#/equipamentos'"><div class="ico m">${ICO('kalita')}</div><div><div class="t">Equipamentos</div><div class="s">${DB.metodos.length} métodos (${state.metodos.length} personalizado${state.metodos.length === 1 ? '' : 's'}) · ${state.moedores.length} moedor(es)</div></div><div>›</div></div>
-      <div class="item" onclick="location.hash='#/biblioteca'"><div class="ico">📚</div><div><div class="t">Biblioteca de terroirs</div><div class="s">Regiões, processos, torras, métodos e indicações</div></div><div>›</div></div>
+      <div class="item" onclick="location.hash='#/biblioteca'"><div class="ico">📚</div><div><div class="t">Biblioteca</div><div class="s">Regiões, processos, torras, métodos e indicações</div></div><div>›</div></div>
       ${hooks.mais.map((fn) => fn()).join('')}
       <div class="item" onclick="location.hash='#/ajustes'"><div class="ico">💾</div><div><div class="t">Backup e ajustes</div><div class="s">Exportar/importar dados, instalar no celular</div></div><div>›</div></div>
     </div>`;
