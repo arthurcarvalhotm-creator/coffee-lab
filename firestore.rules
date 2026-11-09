@@ -1,0 +1,339 @@
+rules_version = '2';
+
+// ===============================================================
+// Assumed Data Model — Laboratório de Cafeteria (Coffee Lab)
+// ===============================================================
+//
+// This security rules file assumes the following data structures:
+//
+// 1. Collection: /users/{userId}
+//    Document ID: {userId} (matches Firebase Auth UID)
+//    Fields:
+//      - uid: string (optional on merge, must equal userId, immutable) - Account owner UID
+//      - updatedAt: number or timestamp (optional, >= 0) - Last sync/modification epoch ms
+//      - schemaVersion: number (optional, 1..100) - Application schema version
+//      - config: map (optional, max 40 keys) - User preferences and barista bench config synced across devices
+//      - lgpd: map (optional, max 20 keys) - LGPD consent and privacy metadata
+//      - por: string (optional, max 120 chars) - Last device identifier
+//      - atualizadoEm: string (optional, max 64 chars) - ISO 8601 timestamp string
+//      - apagados: map (optional, max 20 keys) - Per-collection tombstone map
+//
+// 2. Subcollections: /users/{userId}/{collection}/{docId}
+//    Allowed {collection} values:
+//      ['graos', 'moedores', 'extracoes', 'metodos', 'cafeina', 'latte']
+//    Document ID: {docId} (matches record id)
+//    Common Fields:
+//      - id: string (required, must equal docId, 1..128 chars, immutable) - Record primary key
+//      - contaUid: string or null (optional, must equal userId if present, immutable) - Owner account UID
+//      - updatedAt: number (required, >= 0) - Last modification epoch ms (LWW conflict resolution)
+//      - _mod: number or null (optional, >= 0) - Legacy modification timestamp mirror
+//      - schemaVersion: number or null (optional, 1..100) - Record schema version
+//      - deletedAt: number or null (optional, >= 0) - Logical deletion tombstone epoch ms
+//      - nome: string or null (optional, max 300 chars) - Record name/title
+//      - obs: string or null (optional, max 5000 chars) - Tasting/extraction notes
+//      - foto: string or null (optional, max 350000 chars) - Compressed DataURL photo
+//      - notas: list or null (optional, max 60 items) - Sensory descriptor tags (in 'graos')
+//      - Domain-specific fields per collection (bounded by document key count <= 60)
+//
+// 3. Collection: /community_profiles/{userId}
+//    Document ID: {userId} (matches Firebase Auth UID)
+//    Access: Publicly readable for leaderboard & barista bench showcase; owner-only write/delete
+//    Fields:
+//      - uid: string (required, must equal userId and request.auth.uid, immutable) - Barista UID
+//      - nome: string (required, 1..120 chars) - Display name
+//      - nivel: number (required, 1..100) - Barista XP level
+//      - xpTotal: number (required, 0..10000000) - Total accumulated XP
+//      - tier: number (required, 1..5) - Barista mastery tier
+//      - updatedAt: number (required, >= 0) - Last profile sync epoch ms
+//      - foto: string or null (optional, max 1000 chars) - Avatar URL
+//      - titulo: string or null (optional, max 120 chars) - Barista rank title
+//      - badgesCount: number or null (optional, 0..50) - Unlocked badge count
+//      - badges: list or null (optional, max 50 items) - Unlocked badge IDs
+//      - totalExtracoes: number or null (optional, 0..100000) - Total logged extractions
+//      - calibradas: number or null (optional, 0..100000) - Total calibrated beans
+//      - moedores: list or null (optional, max 30 items) - Showcase grinder names
+//      - metodos: list or null (optional, max 30 items) - Showcase brewing method names
+//      - publico: bool or null (optional) - Visibility flag
+//      - atualizadoEm: string or null (optional, max 64 chars) - ISO 8601 timestamp string
+//
+// 4. Collection: /community_items/{itemId}
+//    Document ID: {itemId} (matches item id)
+//    Access: Publicly readable for community showcase & 1-tap import; author-only write/delete
+//    Fields:
+//      - id: string (required, must equal itemId, 1..128 chars, immutable) - Shared item ID
+//      - autorUid: string (required, must equal request.auth.uid, 1..128 chars, immutable) - Author UID
+//      - autorNome: string (required, 1..120 chars) - Author display name
+//      - tipo: string (required, in ['grao', 'receita', 'moedor', 'metodo']) - Shared item category
+//      - titulo: string (required, 1..200 chars) - Item title
+//      - payload: map (required, max 50 keys) - Sanitized item data for 1-tap import
+//      - updatedAt: number (required, >= 0) - Publication/update epoch ms
+//      - autorTier: number or null (optional, 1..5) - Author mastery tier
+//      - autorNivel: number or null (optional, 1..100) - Author level
+//      - subtitulo: string or null (optional, max 300 chars) - Secondary label (e.g., origin/roaster)
+//      - resumo: string or null (optional, max 1000 chars) - Summary notes/description
+//      - tags: list or null (optional, max 25 items) - Sensory/method tags
+//      - nota: number or null (optional, 0..10) - Cup score / rating
+//      - metodoId: string or null (optional, max 64 chars) - Brewing method identifier
+//      - regiao: string or null (optional, max 64 chars) - Coffee origin region
+//      - processo: string or null (optional, max 64 chars) - Post-harvest process
+//      - torra: string or null (optional, max 64 chars) - Roast level
+//      - criadoEm: string or null (optional, max 64 chars) - ISO 8601 creation timestamp
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    // Check if the user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Check if the authenticated user owns the resource path
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Verify UID field matches the path userId and authenticated user on create/update
+    function uidUnchanged(userId) {
+      return !('uid' in request.resource.data) ||
+        (request.resource.data.uid is string &&
+         request.resource.data.uid == userId &&
+         request.resource.data.uid == request.auth.uid);
+    }
+
+    // Ensure uid field is not modified on update if already set on the existing document
+    function uidNotModified() {
+      return !('uid' in request.resource.data) ||
+        !('uid' in resource.data) ||
+        request.resource.data.uid == resource.data.uid;
+    }
+
+    // Validate required fields exist on the incoming document
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    // Validate optional string field length (allows missing or null)
+    function isValidOptionalString(data, field, maxLen) {
+      return !(field in data) ||
+        data[field] == null ||
+        (data[field] is string && data[field].size() <= maxLen);
+    }
+
+    // Validate optional list field size (allows missing or null)
+    function isValidOptionalList(data, field, maxSize) {
+      return !(field in data) ||
+        data[field] == null ||
+        (data[field] is list && data[field].size() <= maxSize);
+    }
+
+    // Validate optional numeric range (allows missing or null)
+    function isValidOptionalNumber(data, field, minVal, maxVal) {
+      return !(field in data) ||
+        data[field] == null ||
+        (data[field] is number && data[field] >= minVal && data[field] <= maxVal);
+    }
+
+    // Check if subcollection name is one of the 6 valid Coffee Lab collections
+    function isValidCoffeeLabCollection(collection) {
+      return collection in [
+        'graos',
+        'moedores',
+        'extracoes',
+        'metodos',
+        'cafeina',
+        'latte'
+      ];
+    }
+
+    // ===============================================================
+    // Domain Validators (Used in BOTH create and update rules)
+    // ===============================================================
+
+    // Validate /users/{userId} account & sync metadata document
+    function isValidUserDoc(userId, data) {
+      return data.keys().size() <= 20 &&
+        // Prevent privilege escalation fields
+        !('role' in data) &&
+        !('roles' in data) &&
+        !('isAdmin' in data) &&
+        !('admin' in data) &&
+        // Ownership integrity
+        uidUnchanged(userId) &&
+        // Type and size bounds on known fields
+        (!('updatedAt' in data) || (data.updatedAt is number && data.updatedAt >= 0) || data.updatedAt is timestamp) &&
+        (!('schemaVersion' in data) || data.schemaVersion == null || (data.schemaVersion is number && data.schemaVersion >= 1 && data.schemaVersion <= 100)) &&
+        (!('config' in data) || data.config == null || (data.config is map && data.config.keys().size() <= 40)) &&
+        (!('lgpd' in data) || data.lgpd == null || (data.lgpd is map && data.lgpd.keys().size() <= 20)) &&
+        (!('apagados' in data) || data.apagados == null || (data.apagados is map && data.apagados.keys().size() <= 20)) &&
+        isValidOptionalString(data, 'por', 120) &&
+        isValidOptionalString(data, 'atualizadoEm', 64);
+    }
+
+    // Validate /users/{userId}/{collection}/{docId} record document
+    function isValidRecordDoc(userId, docId, data) {
+      return hasRequiredFields(['id', 'updatedAt']) &&
+        data.keys().size() <= 60 &&
+        // Primary key integrity
+        data.id is string &&
+        data.id == docId &&
+        data.id.size() >= 1 &&
+        data.id.size() <= 128 &&
+        // Account ownership binding (optional or must equal userId)
+        (!('contaUid' in data) ||
+          data.contaUid == null ||
+          (data.contaUid is string && data.contaUid == userId && data.contaUid.size() <= 128)) &&
+        // Modification and tombstone timestamps
+        data.updatedAt is number &&
+        data.updatedAt >= 0 &&
+        (!('_mod' in data) || data._mod == null || (data._mod is number && data._mod >= 0)) &&
+        (!('schemaVersion' in data) || data.schemaVersion == null || (data.schemaVersion is number && data.schemaVersion >= 1 && data.schemaVersion <= 100)) &&
+        (!('deletedAt' in data) || data.deletedAt == null || (data.deletedAt is number && data.deletedAt >= 0)) &&
+        // Common string & list bounds to prevent resource exhaustion
+        isValidOptionalString(data, 'nome', 300) &&
+        isValidOptionalString(data, 'obs', 5000) &&
+        isValidOptionalString(data, 'foto', 350000) &&
+        isValidOptionalList(data, 'notas', 60);
+    }
+
+    // Ensure record primary key and ownership fields are not altered on update
+    function recordIdentityUnchanged() {
+      return request.resource.data.id == resource.data.id &&
+        (!('contaUid' in resource.data) ||
+          resource.data.contaUid == null ||
+          request.resource.data.contaUid == resource.data.contaUid);
+    }
+
+    // Validate /community_profiles/{userId} public barista profile document
+    function isValidCommunityProfile(userId, data) {
+      return hasRequiredFields(['uid', 'nome', 'nivel', 'xpTotal', 'tier', 'updatedAt']) &&
+        data.keys().size() <= 20 &&
+        // Prevent privilege escalation fields
+        !('role' in data) &&
+        !('roles' in data) &&
+        !('isAdmin' in data) &&
+        !('admin' in data) &&
+        // Required fields validation
+        data.uid is string &&
+        data.uid == userId &&
+        data.uid == request.auth.uid &&
+        data.nome is string &&
+        data.nome.size() >= 1 &&
+        data.nome.size() <= 120 &&
+        data.nivel is number &&
+        data.nivel >= 1 &&
+        data.nivel <= 100 &&
+        data.xpTotal is number &&
+        data.xpTotal >= 0 &&
+        data.xpTotal <= 10000000 &&
+        data.tier is number &&
+        data.tier >= 1 &&
+        data.tier <= 5 &&
+        data.updatedAt is number &&
+        data.updatedAt >= 0 &&
+        // Optional fields validation
+        isValidOptionalString(data, 'foto', 1000) &&
+        isValidOptionalString(data, 'titulo', 120) &&
+        isValidOptionalNumber(data, 'badgesCount', 0, 50) &&
+        isValidOptionalList(data, 'badges', 50) &&
+        isValidOptionalNumber(data, 'totalExtracoes', 0, 100000) &&
+        isValidOptionalNumber(data, 'calibradas', 0, 100000) &&
+        isValidOptionalList(data, 'moedores', 30) &&
+        isValidOptionalList(data, 'metodos', 30) &&
+        (!('publico' in data) || data.publico == null || data.publico is bool) &&
+        isValidOptionalString(data, 'atualizadoEm', 64);
+    }
+
+    // Validate /community_items/{itemId} shared community item document
+    function isValidCommunityItem(itemId, data) {
+      return hasRequiredFields(['id', 'autorUid', 'autorNome', 'tipo', 'titulo', 'payload', 'updatedAt']) &&
+        data.keys().size() <= 25 &&
+        // Required fields validation
+        data.id is string &&
+        data.id == itemId &&
+        data.id.size() >= 1 &&
+        data.id.size() <= 128 &&
+        data.autorUid is string &&
+        data.autorUid == request.auth.uid &&
+        data.autorUid.size() >= 1 &&
+        data.autorUid.size() <= 128 &&
+        data.autorNome is string &&
+        data.autorNome.size() >= 1 &&
+        data.autorNome.size() <= 120 &&
+        data.tipo is string &&
+        data.tipo in ['grao', 'receita', 'moedor', 'metodo'] &&
+        data.titulo is string &&
+        data.titulo.size() >= 1 &&
+        data.titulo.size() <= 200 &&
+        data.payload is map &&
+        data.payload.keys().size() <= 50 &&
+        data.updatedAt is number &&
+        data.updatedAt >= 0 &&
+        // Optional fields validation
+        isValidOptionalNumber(data, 'autorTier', 1, 5) &&
+        isValidOptionalNumber(data, 'autorNivel', 1, 100) &&
+        isValidOptionalString(data, 'subtitulo', 300) &&
+        isValidOptionalString(data, 'resumo', 1000) &&
+        isValidOptionalList(data, 'tags', 25) &&
+        isValidOptionalNumber(data, 'nota', 0, 10) &&
+        isValidOptionalString(data, 'metodoId', 64) &&
+        isValidOptionalString(data, 'regiao', 64) &&
+        isValidOptionalString(data, 'processo', 64) &&
+        isValidOptionalString(data, 'torra', 64) &&
+        isValidOptionalString(data, 'criadoEm', 64);
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    // Per-user root document: account metadata, LGPD consent, and sync state
+    match /users/{userId} {
+      allow read, delete: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUserDoc(userId, request.resource.data);
+      allow update: if isOwner(userId) && isValidUserDoc(userId, request.resource.data) && uidNotModified();
+
+      // Per-user subcollections for the 6 Coffee Lab domain stores
+      match /{collection}/{docId} {
+        allow read, delete: if isOwner(userId) && isValidCoffeeLabCollection(collection);
+        allow create: if isOwner(userId) &&
+          isValidCoffeeLabCollection(collection) &&
+          isValidRecordDoc(userId, docId, request.resource.data);
+        allow update: if isOwner(userId) &&
+          isValidCoffeeLabCollection(collection) &&
+          isValidRecordDoc(userId, docId, request.resource.data) &&
+          recordIdentityUnchanged();
+      }
+    }
+
+    // Public barista profiles for community leaderboard & equipment bench showcase
+    match /community_profiles/{userId} {
+      allow read: if true;
+      allow delete: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidCommunityProfile(userId, request.resource.data);
+      allow update: if isOwner(userId) && isValidCommunityProfile(userId, request.resource.data) && uidNotModified();
+    }
+
+    // Public community shared items (beans, recipes, grinders, brewing methods)
+    match /community_items/{itemId} {
+      allow read: if true;
+      allow delete: if isAuthenticated() && resource.data.autorUid == request.auth.uid;
+      allow create: if isAuthenticated() && isValidCommunityItem(itemId, request.resource.data);
+      allow update: if isAuthenticated() &&
+        resource.data.autorUid == request.auth.uid &&
+        isValidCommunityItem(itemId, request.resource.data) &&
+        request.resource.data.autorUid == resource.data.autorUid &&
+        request.resource.data.id == resource.data.id;
+    }
+
+    // Default deny for all other paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

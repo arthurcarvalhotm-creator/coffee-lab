@@ -377,7 +377,7 @@
     view.innerHTML = '';
     const top = ['inicio', 'diario', 'nova', 'graos', 'mais', 'escolher'].includes(r.name) && !r.id;
     $('#btnBack').hidden = top;
-    $$('#nav a').forEach((a) => a.classList.toggle('on', a.dataset.route === r.name || (r.name === 'grao' && a.dataset.route === 'graos') || (r.name === 'extracao' && a.dataset.route === 'diario') || (r.name === 'escolher' && a.dataset.route === 'nova') || (['moedores', 'equipamentos', 'biblioteca', 'ajustes', 'cafeina', 'latte'].includes(r.name) && a.dataset.route === 'mais')));
+    $$('#nav a').forEach((a) => a.classList.toggle('on', a.dataset.route === r.name || (r.name === 'grao' && a.dataset.route === 'graos') || (r.name === 'extracao' && a.dataset.route === 'diario') || (r.name === 'escolher' && a.dataset.route === 'nova') || (['moedores', 'equipamentos', 'biblioteca', 'ajustes', 'cafeina', 'latte', 'comunidade', 'sync'].includes(r.name) && a.dataset.route === 'mais')));
     fn(view, r);
     rotularTabelas(view);
     bindChips(view);
@@ -479,7 +479,8 @@
       if (ult.nota >= 8) { humor = humor === 'sonolento' ? humor : 'radiante'; txt += ` Sua última extração de ${g ? g.nome : 'café'} (${m ? m.nome : ''}) tirou nota ${ult.nota}.`; }
       else if (ult.diag && ult.diag.cor !== 'ok') { txt += ` A última de ${g ? g.nome : 'café'} pediu ajuste: ${ult.diag.rotulo.toLowerCase()}.`; }
     }
-    return `<div style="margin-bottom:4px">${window.Mascote.card(humor, txt, { titulo: `${oi}! Eu sou o Pingo.` })}</div>`;
+    const extraHtml = window.CafeGamificacao && window.CafeGamificacao.barraHomeHtml ? window.CafeGamificacao.barraHomeHtml() : '';
+    return `<div style="margin-bottom:4px">${window.Mascote.card(humor, txt, { titulo: `${oi}! Eu sou o Pingo.`, extraHtml })}</div>`;
   }
   function tilesInicio() {
     const ult = ultimaExtracao();
@@ -693,12 +694,14 @@
       <div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap">
         <a class="btn primary sm" href="#/nova?editar=${x.id}">✏️ Editar registro</a>
         <button class="btn sm" id="btnShare">📤 Compartilhar receita</button>
+        <button class="btn sm" id="btnPubComunidade">🌎 Publicar na Comunidade</button>
         <button class="btn sm" id="dup">Duplicar como nova</button>
         <button class="btn danger sm" id="del">Excluir</button>
       </div>`;
     $('#del').onclick = () => { if (confirmar('Excluir esta extração?')) { state.extracoes = state.extracoes.filter((e) => e.id !== x.id); hooks.extracaoExcluida.forEach((fn) => fn(x)); save(); toast('Excluída'); go('#/diario'); } };
     $('#dup').onclick = () => go(`#/nova?from=${x.id}&copiar=1`);
     $('#btnShare').onclick = () => modalCompartilharReceita(x, g, m, md);
+    if ($('#btnPubComunidade')) $('#btnPubComunidade').onclick = () => { if (window.CafeGamificacao) window.CafeGamificacao.compartilharItem('receita', x); };
   };
 
   /* ================== COMPARTILHAMENTO DE RECEITA EM PNG ================== */
@@ -1884,7 +1887,7 @@ Extraído no Laboratório de Cafeteria 🧪☕`;
         ${g.obs ? `<p class="text-2" style="margin:8px 0 0"><small>📝 ${esc(g.obs)}</small></p>` : ''}
         ${g.notas && g.notas.length ? `<p class="text-2" style="margin:8px 0 0"><small>${g.notas.map(esc).join(' · ')}</small></p>` : ''}
         <p class="text-2" style="margin:8px 0 0"><small>${esc(reg.dica)}</small></p>
-        <div class="inline-actions"><a class="btn primary" href="#/nova?grao=${g.id}${mSel ? '&metodo=' + mSel : ''}">＋ Extrair este grão</a></div>
+        <div class="inline-actions" style="gap:8px;flex-wrap:wrap"><a class="btn primary" href="#/nova?grao=${g.id}${mSel ? '&metodo=' + mSel : ''}">＋ Extrair este grão</a><button class="btn" id="btnPubGrao">🌎 Compartilhar na Comunidade</button></div>
       </div>
 
       <div class="section-title"><h2>Calibração</h2></div>
@@ -1916,6 +1919,7 @@ Extraído no Laboratório de Cafeteria 🧪☕`;
       ${state.moedores.length ? `<small class="muted">Cliques calculados para ${esc(moedorPadrao().nome)} (moedor padrão).</small>` : '<small class="muted">Cadastre um moedor para ver cliques.</small>'}
       <div class="row" style="margin-top:16px"><button class="btn sm" id="arq">${g.arquivado ? 'Reativar grão' : 'Arquivar grão'}</button></div>`;
     $('#edit').onclick = () => formGrao(g);
+    if ($('#btnPubGrao')) $('#btnPubGrao').onclick = () => { if (window.CafeGamificacao) window.CafeGamificacao.compartilharItem('grao', g); };
     if ($('#gFoto')) $('#gFoto').onclick = () => verFoto(g.foto);
     if ($('#maisPacote')) $('#maisPacote').onclick = () => { addPacote(g); save(); toast(`Pacote adicionado: ${restante(g)} g em estoque`); render(); };
     $('#semEst').onchange = (e) => { if (e.target.checked) g.semEstoque = true; else delete g.semEstoque; save(); toast(e.target.checked ? 'Marcado como sem estoque' : 'Voltou para as telas de extração'); render(); };
@@ -2057,7 +2061,7 @@ Extraído no Laboratório de Cafeteria 🧪☕`;
     const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
     const isFile = location.protocol === 'file:';
     view.innerHTML = `
-      <div class="card"><h3>Backup</h3><p class="text-2">Os dados ficam neste aparelho (armazenamento local do navegador). Com a sincronização ativa, uma cópia criptografada vai para o seu GitHub. Exporte um backup de vez em quando.</p>
+      <div class="card"><h3>Backup</h3><p class="text-2">Os dados ficam neste aparelho (armazenamento local do navegador). Com a sincronização em nuvem ativa, uma cópia segura fica vinculada à sua conta Google. Exporte um backup JSON de vez em quando.</p>
         <div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn primary" id="exp">⬇︎ Exportar JSON</button><button class="btn" id="expCsv">📊 Exportar diário (CSV)</button><label class="btn">⬆︎ Importar JSON<input type="file" id="imp" accept="application/json,.json" hidden></label><button class="btn" id="copy">Copiar para a área de transferência</button></div>
         <textarea id="paste" placeholder="…ou cole aqui um backup JSON e clique em Importar do texto" style="margin-top:10px"></textarea>
         <div class="row" style="margin-top:6px"><button class="btn sm" id="impTxt">Importar do texto</button></div></div>

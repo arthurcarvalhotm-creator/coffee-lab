@@ -47,13 +47,50 @@
     triste: { olhos: 'triste', boca: 'triste', be: 'baixoE', bd: 'baixoD', anim: 'm-droop', vapor: 1, lagrima: true }
   };
 
+  const PINGO_ESTAGIOS = [
+    { tier: 1, minLevel: 1, nivelMinimo: 1, name: 'Pingo Curioso', titulo: 'Pingo Curioso', subtitle: 'Vapor Clássico de Bancada', acessorio: 'Vapor Clássico de Bancada', perk: 'Começando a jornada sensorial e aprendendo a ler acidez, doçura e corpo.', descricao: 'Começando a jornada sensorial e aprendendo a ler acidez, doçura e corpo.' },
+    { tier: 2, minLevel: 3, nivelMinimo: 3, name: 'Pingo de Bancada', titulo: 'Pingo de Bancada', subtitle: 'Avental Artesanal de Barista', acessorio: 'Avental Artesanal de Barista', perk: 'Já domina a relação entre cliques do moedor, razão e tempo de escoamento.', descricao: 'Já domina a relação entre cliques do moedor, razão e tempo de escoamento.' },
+    { tier: 3, minLevel: 6, nivelMinimo: 6, name: 'Pingo Alquimista', titulo: 'Pingo Alquimista', subtitle: 'Óculos de Precisão + Avental', acessorio: 'Óculos de Precisão + Avental', perk: 'Calibra granulometria por bissecção e controla temperatura por nível de torra.', descricao: 'Calibra granulometria por bissecção e controla temperatura por nível de torra.' },
+    { tier: 4, minLevel: 12, nivelMinimo: 12, name: 'Pingo Mestre de Torra', titulo: 'Pingo Mestre de Torra', subtitle: 'Boina de Torrador + Medalha de Ouro', acessorio: 'Boina de Torrador + Medalha de Ouro', perk: 'Extrai o potencial máximo de lotes fermentados, naturais e lavados de altitude.', descricao: 'Extrai o potencial máximo de lotes fermentados, naturais e lavados de altitude.' },
+    { tier: 5, minLevel: 20, nivelMinimo: 20, name: 'Pingo Grão-Mestre SCA', titulo: 'Pingo Grão-Mestre SCA', subtitle: 'Coroa Dourada SCA + Aura Crema', acessorio: 'Coroa Dourada SCA + Aura Crema', perk: 'Lenda viva da bancada: domínio técnico absoluto em múltiplos métodos de preparo.', descricao: 'Lenda viva da bancada: domínio técnico absoluto em múltiplos métodos de preparo.' }
+  ];
+
+  function estagioPorNivel(nivel) {
+    const nv = Number(nivel) || 1;
+    let st = PINGO_ESTAGIOS[0];
+    for (const item of PINGO_ESTAGIOS) {
+      if (nv >= item.minLevel) st = item;
+    }
+    return st;
+  }
+
+  function resolverTier(opts) {
+    if (opts && opts.tier != null) return Math.max(1, Math.min(5, Number(opts.tier) || 1));
+    if (opts && opts.nivel != null) return estagioPorNivel(opts.nivel).tier;
+    if (typeof window !== 'undefined' && window.CafeGamificacao && typeof window.CafeGamificacao.tierAtual === 'function') {
+      return window.CafeGamificacao.tierAtual();
+    }
+    return 1;
+  }
+
   function svg(humor, opts) {
     opts = opts || {};
     const h = HUMORES[humor] || HUMORES.feliz;
     const tam = opts.size || 96;
+    const tier = resolverTier(opts);
     const [pe, xe, ye] = BRACO[h.be], [pd, xd, yd] = BRACO[h.bd];
     const vapores = [[48, 0], [60, 0.6], [72, 1.2], [54, 1.8]].slice(0, h.vapor).map(([x, d]) => `<path class="m-steam" style="animation-delay:${d}s" d="M${x} 32 q-5 -6 0 -12 q5 -6 0 -12" stroke="${CUP2}" stroke-width="3" fill="none" stroke-linecap="round"/>`).join('');
-    return `<svg class="mascote ${opts.anim === false ? '' : h.anim}" viewBox="0 0 120 120" width="${tam}" height="${tam}" role="img" aria-label="Pingo, a xícara mascote (${humor})">
+    const aura = tier >= 5 ? `<circle class="m-aura" cx="60" cy="66" r="50" fill="none" stroke="#d98a3c" stroke-width="1.8" stroke-dasharray="4 4" opacity=".55"/>` : '';
+    const avental = tier >= 2 ? `<g class="m-avental"><path d="M38 82 H82 L80 98 Q60 100 40 98 Z" fill="#7d4925" stroke="${INK}" stroke-width="1.8" stroke-linejoin="round"/><line x1="48" y1="82" x2="72" y2="82" stroke="#d98a3c" stroke-width="1.8" stroke-linecap="round"/></g>` : '';
+    const medalha = tier >= 4 ? `<g class="m-medalha"><circle cx="60" cy="90" r="5.5" fill="#f4b942" stroke="${INK}" stroke-width="1.5"/><circle cx="60" cy="90" r="2.2" fill="#d98a3c"/></g>` : '';
+    const chapeu = tier === 4
+      ? `<path class="m-boina" d="M35 37 Q60 22 83 36 Q60 33 35 37 Z" fill="#3e2518" stroke="${INK}" stroke-width="2" stroke-linejoin="round"/>`
+      : tier >= 5
+        ? `<polygon class="m-coroa" points="42,36 47,23 55,31 60,20 65,31 73,23 78,36" fill="#f4b942" stroke="${INK}" stroke-width="2" stroke-linejoin="round"/>`
+        : '';
+    const oculos = tier >= 3 ? `<g class="m-oculos" stroke="${INK}" stroke-width="1.8" fill="none"><circle cx="48" cy="63" r="8" fill="rgba(217,138,60,.14)"/><circle cx="72" cy="63" r="8" fill="rgba(217,138,60,.14)"/><line x1="56" y1="63" x2="64" y2="63"/></g>` : '';
+    return `<svg class="mascote ${opts.anim === false ? '' : h.anim}" viewBox="0 0 120 120" width="${tam}" height="${tam}" role="img" aria-label="Pingo, a xícara mascote (${humor}, estágio ${tier})">
+      ${aura}
       <g class="m-vapor">${vapores}</g>
       <g class="m-corpo">
         <ellipse cx="60" cy="104" rx="42" ry="6.5" fill="${CUP2}" stroke="${INK}" stroke-width="2.4"/>
@@ -61,11 +98,15 @@
         <path d="M92 52 C112 50 113 82 90 80" stroke="${CUP}" stroke-width="4" fill="none" stroke-linecap="round"/>
         <path d="M26 42 H94 L88 88 Q86 99 75 99 H45 Q34 99 32 88 Z" fill="${CUP}" stroke="${INK}" stroke-width="2.6" stroke-linejoin="round"/>
         <path d="M31 80 Q60 88 89 80 L88 88 Q86 99 75 99 H45 Q34 99 32 88 Z" fill="${CUP2}" opacity=".7"/>
+        ${avental}
+        ${medalha}
         <ellipse cx="60" cy="42" rx="34" ry="7" fill="${CAFE}" stroke="${INK}" stroke-width="2.6"/>
         <ellipse cx="60" cy="42.5" rx="26" ry="4.4" fill="${CREMA}"/>
         <path d="M60 46 C54 42 55 38.6 58 39.2 Q60 39.8 60 41.2 Q60 39.8 62 39.2 C65 38.6 66 42 60 46 Z" fill="${CUP}"/>
+        ${chapeu}
         ${h.blush ? `<ellipse cx="40" cy="75" rx="5" ry="3" fill="${BLUSH}" opacity=".7"/><ellipse cx="80" cy="75" rx="5" ry="3" fill="${BLUSH}" opacity=".7"/>` : ''}
         ${OLHOS[h.olhos](48, -1)}${OLHOS[h.olhos](72, 1)}
+        ${oculos}
         ${BOCAS[h.boca]}
         ${h.lagrima ? `<path class="m-tear" d="M44 72 q-3 5 0 7 q3 -2 0 -7 Z" fill="#7fb0ea"/>` : ''}
         ${h.suor ? `<path d="M88 50 q-3 5 0 7 q3 -2 0 -7 Z" fill="#7fb0ea"/>` : ''}
@@ -81,7 +122,7 @@
   /* Balão de fala com o Pingo */
   function card(humor, texto, opts) {
     opts = opts || {};
-    return `<div class="pingo-card ${opts.compacto ? 'compacto' : ''}"><div class="pingo-fig">${svg(humor, { size: opts.size || (opts.compacto ? 64 : 92) })}</div><div class="pingo-fala">${opts.titulo ? `<strong>${opts.titulo}</strong><br>` : ''}${texto}</div></div>`;
+    return `<div class="pingo-card ${opts.compacto ? 'compacto' : ''}"><div class="pingo-fig">${svg(humor, { size: opts.size || (opts.compacto ? 64 : 92), tier: opts.tier, anim: opts.anim })}</div><div class="pingo-fala">${opts.titulo ? `<strong>${opts.titulo}</strong><br>` : ''}${texto}${opts.extraHtml || ''}</div></div>`;
   }
 
   /* ---------- humores por contexto ---------- */
@@ -134,6 +175,6 @@
   }
 
   window.Mascote = { svg, card, porCafeina, porExtracao, porLatte, NIVEIS, nivelPorNota, nivelExtracao, escala,
-    HUMORES: Object.keys(HUMORES), nome: 'Pingo' };
+    PINGO_ESTAGIOS, resolverTier, estagioPorNivel, HUMORES: Object.keys(HUMORES), nome: 'Pingo' };
   window.Pingo = window.Mascote;
 })();

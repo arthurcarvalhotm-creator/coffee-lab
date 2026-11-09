@@ -822,3 +822,166 @@ h3 .badge, .t .badge { vertical-align: middle; }
   margin-top: 10px;
 }
 
+/* ---------- Gamificação, Evolução do Pingo e Comunidade ---------- */
+#btnSync.sync-on {
+  color: var(--ok);
+  border-color: var(--ok);
+}
+
+.pingo-xp-bar {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+  cursor: pointer;
+}
+.pingo-lvl-badge {
+  display: inline-block;
+  font-size: .78rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+.xp-track {
+  height: 6px;
+  background: var(--surface-2);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+.xp-track.lg {
+  height: 9px;
+  margin-top: 6px;
+}
+.xp-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--ok));
+  border-radius: 999px;
+  transition: width .35s ease;
+}
+
+.gamif-hero-top {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+.gamif-avatar-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+}
+.gamif-hero-info {
+  flex: 1;
+  min-width: 0;
+}
+@media (max-width: 520px) {
+  .gamif-hero-top {
+    flex-direction: column;
+    text-align: center;
+  }
+}
+
+.pingo-stages-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+.stage-card {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  transition: transform .15s ease;
+}
+.stage-card.atual {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.stage-card.locked {
+  opacity: .65;
+  filter: grayscale(.35);
+}
+.stage-fig {
+  flex-shrink: 0;
+}
+.stage-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.mastery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+}
+.mastery-card {
+  padding: 12px;
+}
+
+.badges-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+}
+.badge-card {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.badge-card.unlocked {
+  border-color: var(--ok);
+}
+.badge-card.locked {
+  opacity: .68;
+}
+.badge-ico {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.45rem;
+  flex-shrink: 0;
+}
+.badge-card.unlocked .badge-ico {
+  background: color-mix(in srgb, var(--ok) 15%, var(--surface-2));
+}
+.badge-body {
+  flex: 1;
+  min-width: 0;
+}
+.badge-ok-txt {
+  color: var(--ok);
+  font-weight: 700;
+}
+
+.com-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.rank-item.me {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.rank-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.rank-pos {
+  font-size: 1.35rem;
+  font-weight: 800;
+  min-width: 32px;
+  text-align: center;
+  color: var(--accent);
+}
+.rank-avatar {
+  flex-shrink: 0;
+}
+.rank-info {
+  flex: 1;
+  min-width: 0;
+}
+
+
