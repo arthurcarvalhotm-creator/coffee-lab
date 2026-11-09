@@ -187,6 +187,17 @@
       });
       state.config.moedoresVersao = 7; save();
     }
+    if ((state.config.moedoresVersao || 0) < 8) { // Referências de cliques para Origami e Hario Suiren
+      state.moedores.forEach((m) => {
+        const modelo = DB.moedoresModelo.find((x) => (x.id && x.id === m.modeloId) || x.nome === m.nome);
+        if (modelo && modelo.refs) {
+          m.refs = m.refs || {};
+          if (m.refs.origami == null && modelo.refs.origami != null) m.refs.origami = modelo.refs.origami;
+          if (m.refs.suiren == null && modelo.refs.suiren != null) m.refs.suiren = modelo.refs.suiren;
+        }
+      });
+      state.config.moedoresVersao = 8; save();
+    }
     if (!state.config.estoqueV2) { // moedor padrão E55 Pro; grãos que já zeraram ficam sem estoque
       const e55 = state.moedores.find((x) => x.modeloId === 'starseeker-e55-pro');
       if (e55 && !state.config.moedorPadrao) state.config.moedorPadrao = e55.id;

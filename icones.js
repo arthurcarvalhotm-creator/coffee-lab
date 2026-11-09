@@ -10,6 +10,8 @@ window.IconesMetodo = (function () {
     espresso: `<path d="M11 19h21v8a9 9 0 0 1-9 9h-3a9 9 0 0 1-9-9z"/><path d="M32 22h3a4.5 4.5 0 0 1 0 9h-3.6"/><path d="M7 40h30"/><path ${A} d="M13.5 23.5h16"/><path ${A} d="M18 7c-2 2.6 2 4.4 0 7.5M25 7c-2 2.6 2 4.4 0 7.5"/>`,
     moka: `<path d="M13 9h20l-3.5 15h-13z"/><path d="M16.5 26h13l4.5 15h-22z"/><path d="M33 11.5h4.5l-2.5 10h-3.5"/><path d="M13 9l-3.5-2"/><path ${A} d="M16 24.8h14"/><path ${A} d="M21 9V6.2h4V9"/>`,
     v60: `<path d="M8 12h30l-11.5 18h-7z"/><path d="M38 14c5.5 0 5.5 8.5-2.5 9.5"/><path d="M11 35h24"/><path d="M19.5 30v5M26.5 30v5"/><path ${A} d="M16 15.5c1.2 4.2 3.6 8 6 11.5M24 15.5c.4 3.6 1.2 7 2.4 10.2M31 15.5c-.8 3-2 5.8-3.2 8.3"/>`,
+    origami: `<path d="M8 13l2.7-2.5 2.7 2.5 2.7-2.5 2.7 2.5 2.6-2.5 2.6 2.5 2.6-2.5 2.6 2.5 2.7-2.5 2.7 2.5 2.7-2.5 2.7 2.5"/><path d="M8 13l12 18h8l12-18"/><path d="M14 31h20"/><path d="M11 35h26"/><path d="M18.5 31v4M29.5 31v4"/><path ${A} stroke-width="1.8" d="M13.4 13l7.8 18M18.8 13l4.2 18M24 10.5V31M29.2 13l-4.2 18M34.6 13l-7.8 18"/>`,
+    suiren: `<path d="M9 12c2.5 6.5 6.5 12.5 10.5 17.5M39 12c-2.5 6.5-6.5 12.5-10.5 17.5"/><path d="M9 12l2.5-2 2 2.5M15.5 11.5l2-2 2 2.2M22 11l2-2 2 2M28.5 11.7l2-2.2 2 2M34.5 12.5l2-2.5 2.5 2"/><path d="M17.5 29.5h13l-1 3.5h-11z"/><path d="M30.5 30c5 0 5.5 5-1 6"/><path d="M11 37h26"/><path d="M19.5 33v4M28.5 33v4"/><path ${A} stroke-width="2" d="M14.5 12c1.8 6 4.8 12 7.5 17.5M20 11.5c1.2 6 2.8 12 4.2 18M26 11.5c-.4 6-1 12-1 18M32.5 12c-1.8 6-4 12-5.8 17.5"/>`,
     kalita: `<path d="M8 12h30l-6.5 19h-17z"/><path d="M11 36h24"/><path d="M17 31v5M29 31v5"/><path d="M38 14c5 0 5 8-2 9"/><path ${A} d="M10 12.5l2.4 3 2.4-3 2.4 3 2.4-3 2.4 3 2.4-3 2.4 3 2.4-3 2.4 3 2.4-3 2.4 3 2.4-3"/><path ${A} d="M18.5 19.5l1.8 9M23 19.5v9M27.5 19.5l-1.8 9"/>`,
     b75: `<path d="M8 12h30l-6 18h-18z"/><path d="M11 35h24"/><path d="M16.5 30v5M29.5 30v5"/><path d="M38 14c5 0 5 8-2 9"/><path ${A} stroke-width="1.8" d="M12.5 14.5l4 13M33.5 14.5l-4 13M19 12.5l7.5 17M27 12.5l-7.5 17"/>`,
     melitta: `<path d="M9 11h28l-8.5 21h-11z"/><path d="M37 13.5c5 0 5 8.5-2.5 9.5"/><path d="M12 37h22"/><path d="M18.5 32v5M27.5 32v5"/><path ${A} d="M14 16h18"/><circle ${A} cx="23" cy="28.5" r="1.4"/>`,
@@ -23,7 +25,7 @@ window.IconesMetodo = (function () {
     personalizado: `<rect x="8" y="8" width="32" height="32" rx="7" stroke-dasharray="4 3.2"/><path ${A} d="M24 16v16M16 24h16"/>`
   };
   const NOMES = {
-    espresso: 'Espresso', moka: 'Moka', v60: 'Cônico (V60)', kalita: 'Fundo plano ondulado', b75: 'Fundo plano facetado', melitta: 'Trapezoidal',
+    espresso: 'Espresso', moka: 'Moka', v60: 'Cônico (V60)', origami: 'Cônico pregueado (Origami)', suiren: 'Cônico em pétalas (Suiren)', kalita: 'Fundo plano ondulado', b75: 'Fundo plano facetado', melitta: 'Trapezoidal',
     chemex: 'Chemex', clever: 'Imersão com válvula', aeropress: 'AeroPress', 'prensa-francesa': 'Prensa', 'coador-pano': 'Coador de pano', 'cold-brew': 'Pote (cold brew)', chaleira: 'Chaleira'
   };
   function svg(key, cls) {

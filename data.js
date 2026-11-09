@@ -39,7 +39,7 @@ window.CAFE_DB = (function () {
       acidez: 4, corpo: 3, docura: 4,
       variedades: ['Bourbon Amarelo', 'Catuaí', 'Mundo Novo', 'Catucaí', 'Arara'],
       processos: ['natural', 'cereja-descascado', 'lavado', 'anaerobico', 'honey'],
-      metodos: ['v60', 'kalita', 'chemex', 'aeropress', 'clever'],
+      metodos: ['v60', 'origami', 'suiren', 'kalita', 'chemex', 'aeropress', 'clever'],
       dica: 'Prefira filtrados com água mais quente (94–96 °C) em torras claras para abrir a acidez frutada. Espresso pede razão mais longa (1:2,3+).'
     },
     {
@@ -160,7 +160,7 @@ window.CAFE_DB = (function () {
       acidez: 4, corpo: 3, docura: 4,
       variedades: ['Catuaí', 'Catucaí', 'Bourbon Amarelo', 'Arara', 'Paraíso'],
       processos: ['natural', 'anaerobico', 'cereja-descascado', 'honey', 'lavado'],
-      metodos: ['v60', 'kalita', 'aeropress', 'chemex', 'clever'],
+      metodos: ['v60', 'origami', 'suiren', 'kalita', 'aeropress', 'chemex', 'clever'],
       dica: 'Muitos lotes fermentados: comece em 92 °C e 1:16; se faltar doçura, feche moagem em vez de subir temperatura.'
     },
     {
@@ -322,6 +322,22 @@ window.CAFE_DB = (function () {
       receita: '10 g / 160 g. Bloom 30 g por ~40 s e 3 despejos até 160 g. Com dose pequena o leito é baixo: se drenar antes da faixa, afine um ajuste.'
     },
     {
+      id: 'origami', nome: 'Origami Dripper', curto: 'Origami', tipo: 'filtrado', icone: '🔻', fluxo: 6.5, base: 'v60',
+      ratio: { min: 14, max: 18, padrao: 16 }, dosePadrao: 10,
+      tempC: { min: 88, max: 96, padrao: 93 }, tempoS: { min: 120, max: 175, padrao: 145 },
+      grind: 3, microns: [550, 750], grindDesc: 'Média-fina (um toque mais fina que V60 no papel cônico)',
+      sensibilidade: 'Alta no filtro cônico (20 caneluras criam amplo fluxo de ar e drenagem rápida) e média no filtro Wave (fundo plano encosta nas dobras e reduz o bypass).',
+      receita: '10 g / 160 g. Com filtro cônico, moa ~1 ajuste mais fino que na V60 e despeje mais próximo do centro para destacar florais e acidez; com filtro Kalita Wave, use moagem média para ganhar corpo e doçura.'
+    },
+    {
+      id: 'suiren', nome: 'Hario V60 Suiren', curto: 'Hario Suiren', tipo: 'filtrado', icone: '🪷', fluxo: 7, base: 'v60',
+      ratio: { min: 14.5, max: 18, padrao: 16 }, dosePadrao: 10,
+      tempC: { min: 90, max: 98, padrao: 94.5 }, tempoS: { min: 115, max: 170, padrao: 140 },
+      grind: 3, microns: [500, 700], grindDesc: 'Média-fina (1–2 ajustes mais fina que V60)',
+      sensibilidade: 'Alta: as 12 pétalas sem parede sólida eliminam qualquer bloqueio de ar (fluxo muito livre) e dissipam calor no terço final da extração.',
+      receita: '10 g / 160 g. Comece com água 1–1,5 °C mais quente e moagem levemente mais fina que na V60 tradicional: o início quente extrai acidez e doçura, e o resfriamento natural pelas aletas abertas no final evita amargor e adstringência.'
+    },
+    {
       id: 'kalita', nome: 'Kalita Wave', tipo: 'filtrado', icone: '〰️', fluxo: 5,
       ratio: { min: 14, max: 17, padrao: 15.5 }, dosePadrao: 10,
       tempC: { min: 88, max: 96, padrao: 93 }, tempoS: { min: 140, max: 190, padrao: 160 },
@@ -408,25 +424,25 @@ window.CAFE_DB = (function () {
 
   /* Moedores populares como modelos de escala (o usuário pode editar) */
   const moedoresModelo = [
-    { nome: 'Timemore C2 / C3', tipo: 'manual', min: 0, max: 36, passo: 1, refs: { espresso: 7, moka: 12, aeropress: 16, v60: 19, kalita: 21, melitta: 21, 'coador-pano': 21, clever: 21, chemex: 24, 'prensa-francesa': 28, 'cold-brew': 30 } },
-    { nome: 'Comandante C40', tipo: 'manual', min: 0, max: 50, passo: 1, refs: { espresso: 8, moka: 14, aeropress: 18, v60: 24, kalita: 26, melitta: 26, 'coador-pano': 26, clever: 26, chemex: 30, 'prensa-francesa': 35, 'cold-brew': 38 } },
-    { nome: 'Hario Skerton / Mini Slim', tipo: 'manual', min: 0, max: 20, passo: 1, refs: { espresso: 2, moka: 5, aeropress: 7, v60: 9, kalita: 10, melitta: 10, 'coador-pano': 10, clever: 10, chemex: 12, 'prensa-francesa': 15, 'cold-brew': 17 } },
-    { nome: 'Baratza Encore', tipo: 'elétrico', min: 1, max: 40, passo: 1, refs: { espresso: 4, moka: 8, aeropress: 12, v60: 15, kalita: 17, melitta: 17, 'coador-pano': 17, clever: 17, chemex: 22, 'prensa-francesa': 28, 'cold-brew': 32 } },
-    { nome: 'Fellow Ode Gen 2', tipo: 'elétrico', min: 1, max: 11, passo: 0.33, refs: { moka: 1.5, aeropress: 2.5, v60: 4, kalita: 4.5, melitta: 4.5, 'coador-pano': 4.5, clever: 5, chemex: 6, 'prensa-francesa': 8, 'cold-brew': 9 } },
-    { nome: 'DF64 / Eureka Mignon (escala genérica 0–50)', tipo: 'elétrico', min: 0, max: 50, passo: 0.5, refs: { espresso: 6.5, moka: 14, aeropress: 22, v60: 28, kalita: 30, melitta: 30, 'coador-pano': 30, clever: 30, chemex: 34, 'prensa-francesa': 40, 'cold-brew': 44 } },
+    { nome: 'Timemore C2 / C3', tipo: 'manual', min: 0, max: 36, passo: 1, refs: { espresso: 7, moka: 12, aeropress: 16, suiren: 18, origami: 18, v60: 19, kalita: 21, melitta: 21, 'coador-pano': 21, clever: 21, chemex: 24, 'prensa-francesa': 28, 'cold-brew': 30 } },
+    { nome: 'Comandante C40', tipo: 'manual', min: 0, max: 50, passo: 1, refs: { espresso: 8, moka: 14, aeropress: 18, suiren: 22, origami: 23, v60: 24, kalita: 26, melitta: 26, 'coador-pano': 26, clever: 26, chemex: 30, 'prensa-francesa': 35, 'cold-brew': 38 } },
+    { nome: 'Hario Skerton / Mini Slim', tipo: 'manual', min: 0, max: 20, passo: 1, refs: { espresso: 2, moka: 5, aeropress: 7, suiren: 8, origami: 9, v60: 9, kalita: 10, melitta: 10, 'coador-pano': 10, clever: 10, chemex: 12, 'prensa-francesa': 15, 'cold-brew': 17 } },
+    { nome: 'Baratza Encore', tipo: 'elétrico', min: 1, max: 40, passo: 1, refs: { espresso: 4, moka: 8, aeropress: 12, suiren: 14, origami: 14, v60: 15, kalita: 17, melitta: 17, 'coador-pano': 17, clever: 17, chemex: 22, 'prensa-francesa': 28, 'cold-brew': 32 } },
+    { nome: 'Fellow Ode Gen 2', tipo: 'elétrico', min: 1, max: 11, passo: 0.33, refs: { moka: 1.5, aeropress: 2.5, suiren: 3.66, origami: 3.66, v60: 4, kalita: 4.5, melitta: 4.5, 'coador-pano': 4.5, clever: 5, chemex: 6, 'prensa-francesa': 8, 'cold-brew': 9 } },
+    { nome: 'DF64 / Eureka Mignon (escala genérica 0–50)', tipo: 'elétrico', min: 0, max: 50, passo: 0.5, refs: { espresso: 6.5, moka: 14, aeropress: 22, suiren: 26, origami: 27, v60: 28, kalita: 30, melitta: 30, 'coador-pano': 30, clever: 30, chemex: 34, 'prensa-francesa': 40, 'cold-brew': 44 } },
     { id: 'kingrinder-k2', nome: 'Kingrinder K2', tipo: 'manual', min: 0, max: 160, passo: 1, direcao: 'menor=fino', umPorClique: 18,
       obs: '40 cliques por volta, 18 µm por clique. Conte os cliques a partir do zero (mós encostadas). Referências calibradas pelo uso real: espresso (16 g) 28–42, coados 60–120.',
-      refs: { espresso: 35, moka: 55, aeropress: 70, v60: 80, kalita: 90, melitta: 95, 'coador-pano': 90, clever: 90, chemex: 105, 'prensa-francesa': 130, 'cold-brew': 140 } },
+      refs: { espresso: 35, moka: 55, aeropress: 70, suiren: 76, origami: 78, v60: 80, kalita: 90, melitta: 95, 'coador-pano': 90, clever: 90, chemex: 105, 'prensa-francesa': 130, 'cold-brew': 140 } },
     { id: 'starseeker-e55-pro', nome: 'Starseeker E55 Pro', tipo: 'elétrico', min: 0, max: 220, passo: 1, direcao: 'menor=fino', umPorClique: 10,
       obs: 'Ajuste stepless: registre a marcação do anel (100 por volta, ~10 µm de abertura cada). Zero = mós encostadas. Referências calibradas pelo uso real: espresso (16 g) 28–44, coados em torno de 120.',
-      refs: { espresso: 35, moka: 65, aeropress: 100, v60: 120, kalita: 128, melitta: 130, 'coador-pano': 128, clever: 128, chemex: 140, 'prensa-francesa': 170, 'cold-brew': 180 } },
+      refs: { espresso: 35, moka: 65, aeropress: 100, suiren: 115, origami: 117, v60: 120, kalita: 128, melitta: 130, 'coador-pano': 128, clever: 128, chemex: 140, 'prensa-francesa': 170, 'cold-brew': 180 } },
     { id: '1zpresso-jx-pro', nome: '1Zpresso JX-Pro', tipo: 'manual', min: 0, max: 200, passo: 1, direcao: 'menor=fino', umPorClique: 12.5,
       obs: '40 cliques por volta, 12,5 µm por clique. Registre em cliques totais a partir do zero (2 voltas e 10 cliques = 90). Referências calibradas pelo uso real: espresso (16 g) 55–75, coados 110–150.',
-      refs: { espresso: 62, moka: 90, aeropress: 105, v60: 120, kalita: 130, melitta: 135, 'coador-pano': 130, clever: 130, chemex: 145, 'prensa-francesa': 165, 'cold-brew': 175 } },
+      refs: { espresso: 62, moka: 90, aeropress: 105, suiren: 115, origami: 117, v60: 120, kalita: 130, melitta: 135, 'coador-pano': 130, clever: 130, chemex: 145, 'prensa-francesa': 165, 'cold-brew': 175 } },
     { id: 'tramontina-breville-express', nome: 'Tramontina by Breville Express', tipo: 'elétrico', min: 1, max: 60, passo: 1, direcao: 'menor=fino', passoAjuste: 2,
       obs: 'Escala de 1 a 60 (menor = mais fino). Faixas do fabricante calibradas para 16 g: espresso 3–10 (ideal 6), moka 13–20, cônicos V60/Koar 21–30, Melitta/elétrica 25–35, Chemex/Clever 35–45, prensa 46–55, cold brew 56–60.',
-      refs: { espresso: 6, moka: 16, aeropress: 22, v60: 25, kalita: 28, melitta: 30, 'coador-pano': 30, clever: 40, chemex: 40, 'prensa-francesa': 50, 'cold-brew': 58 } },
-    { nome: 'Genérico (0–40)', tipo: 'manual', min: 0, max: 40, passo: 1, refs: { espresso: 5, moka: 10, aeropress: 15, v60: 18, kalita: 20, melitta: 20, 'coador-pano': 20, clever: 20, chemex: 24, 'prensa-francesa': 30, 'cold-brew': 34 } }
+      refs: { espresso: 6, moka: 16, aeropress: 22, suiren: 23, origami: 24, v60: 25, kalita: 28, melitta: 30, 'coador-pano': 30, clever: 40, chemex: 40, 'prensa-francesa': 50, 'cold-brew': 58 } },
+    { nome: 'Genérico (0–40)', tipo: 'manual', min: 0, max: 40, passo: 1, refs: { espresso: 5, moka: 10, aeropress: 15, suiren: 17, origami: 17, v60: 18, kalita: 20, melitta: 20, 'coador-pano': 20, clever: 20, chemex: 24, 'prensa-francesa': 30, 'cold-brew': 34 } }
   ];
 
   /* Descritores sensoriais (chips) */
@@ -451,10 +467,10 @@ window.CAFE_DB = (function () {
 
   /* Tabela de indicações método × perfil (usado na biblioteca e no sugestor) */
   const indicacoesPerfil = [
-    { perfil: 'Acidez alta, corpo leve-médio, florais/frutas (Mantiqueira, Chapada Diamantina, Caparaó, Montanhas do ES lavados)', metodos: ['v60', 'chemex', 'kalita', 'aeropress'], razao: '1:16 – 1:17', tempC: '94 – 96 °C', torra: 'clara / média-clara' },
-    { perfil: 'Equilíbrio, doçura, corpo médio (Sul de Minas, Matas de Minas, CD em geral)', metodos: ['v60', 'kalita', 'melitta', 'clever', 'espresso'], razao: '1:15 – 1:16 (espresso 1:2 – 1:2,2)', tempC: '92 – 94 °C', torra: 'média-clara / média' },
+    { perfil: 'Acidez alta, corpo leve-médio, florais/frutas (Mantiqueira, Chapada Diamantina, Caparaó, Montanhas do ES lavados)', metodos: ['v60', 'suiren', 'origami', 'chemex', 'kalita', 'aeropress'], razao: '1:16 – 1:17', tempC: '94 – 96 °C', torra: 'clara / média-clara' },
+    { perfil: 'Equilíbrio, doçura, corpo médio (Sul de Minas, Matas de Minas, CD em geral)', metodos: ['v60', 'origami', 'kalita', 'melitta', 'clever', 'espresso'], razao: '1:15 – 1:16 (espresso 1:2 – 1:2,2)', tempC: '92 – 94 °C', torra: 'média-clara / média' },
     { perfil: 'Corpo cheio, chocolate, acidez baixa (Cerrado, Mogiana, Norte Pioneiro, Planalto BA)', metodos: ['espresso', 'prensa-francesa', 'moka', 'coador-pano', 'melitta'], razao: '1:14 – 1:15 (espresso 1:1,8 – 1:2)', tempC: '90 – 93 °C', torra: 'média / média-escura' },
-    { perfil: 'Fermentados intensos (anaeróbico, maceração carbônica, co-fermentação)', metodos: ['v60', 'aeropress', 'clever', 'kalita'], razao: '1:16 – 1:17', tempC: '90 – 92 °C', torra: 'clara / média-clara' },
+    { perfil: 'Fermentados intensos (anaeróbico, maceração carbônica, co-fermentação)', metodos: ['v60', 'origami', 'suiren', 'aeropress', 'clever', 'kalita'], razao: '1:16 – 1:17', tempC: '90 – 92 °C', torra: 'clara / média-clara' },
     { perfil: 'Canephora fino (Conilon Capixaba, Robusta Amazônico)', metodos: ['espresso', 'moka', 'cold-brew', 'prensa-francesa'], razao: '1:1,8 – 1:2 (espresso) · 1:12 – 1:14 (imersão)', tempC: '88 – 91 °C', torra: 'média / média-escura' },
     { perfil: 'Torra escura (qualquer origem)', metodos: ['prensa-francesa', 'moka', 'coador-pano', 'cold-brew'], razao: '1:13 – 1:15', tempC: '85 – 89 °C', torra: 'escura' }
   ];
@@ -470,6 +486,20 @@ window.CAFE_DB = (function () {
       { t: 65, agua: 0.75, desc: '3º ataque: até 75 % da água, mantendo o nível no filtro.' },
       { t: 90, agua: 1.00, desc: '4º ataque: complete a água. Gire (swirl) para nivelar o leito.' },
       { t: 140, agua: 1.00, desc: 'Drenagem. Leito plano, sem pó agarrado na parede.' }
+    ] },
+    origami: { nome: 'Origami – 4 despejos de fluxo controlado', etapas: [
+      { t: 0, agua: 0.19, desc: 'Bloom: despeje ~3× a dose do centro para fora, molhando todo o pó.' },
+      { t: 35, agua: 0.50, desc: '2º ataque: espiral curta (sem jogar água direto nos 20 vincos da borda) até 50 %.' },
+      { t: 65, agua: 0.75, desc: '3º ataque: despejo suave no centro/meio até 75 % da água.' },
+      { t: 90, agua: 1.00, desc: '4º ataque: complete a água no centro e dê um leve giro (swirl) para assentar o leito.' },
+      { t: 135, agua: 1.00, desc: 'Drenagem. No filtro cônico o escoamento é ágil; no filtro Wave o leito termina plano.' }
+    ] },
+    suiren: { nome: 'Hario Suiren – bloom + 3 ataques (queda térmica natural)', etapas: [
+      { t: 0, agua: 0.20, desc: 'Bloom quente: despeje ~3× a dose em espiral rápida para aquecer o leito e abrir os florais.' },
+      { t: 40, agua: 0.55, desc: '2º ataque: espiral contínua e firme até 55 %, mantendo o volume alto para reter calor.' },
+      { t: 70, agua: 0.80, desc: '3º ataque: despeje suave no centro até 80 % da água.' },
+      { t: 95, agua: 1.00, desc: '4º ataque: complete até 100 %. As 12 pétalas abertas resfriam o final, cortando a adstringência.' },
+      { t: 130, agua: 1.00, desc: 'Drenagem livre pelas aletas. Leito limpo e bebida com transparência de chá.' }
     ] },
     kalita: { nome: 'Kalita Wave – pulsos', etapas: [
       { t: 0, agua: 0.18, desc: 'Bloom com ~3× a dose; mexa uma vez.' },

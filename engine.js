@@ -111,14 +111,23 @@ window.Engine = (function () {
     else if (isEspresso(method)) tempC = torra.base.espressoTempC + proc.ajuste.tempC * 0.5;
     else tempC = torra.base.filtroTempC + proc.ajuste.tempC + (method.tempC.padrao - 93);
     if (acidez >= 4 && !isPressao(method) && baseId(method) !== 'cold-brew') tempC += 0.5;
+    if (method.id === 'suiren' && (proc.id === 'anaerobico' || proc.id === 'fermentacao-induzida')) {
+      tempC += 0.5; // as 12 pétalas abertas já esfriam o terço final da extração
+    }
     if (canephora) tempC -= 2;
     tempC = clamp(Math.round(tempC * 2) / 2, method.tempC.min, method.tempC.max);
     por.push(`Torra ${torra.nome.toLowerCase()}: base de ${isEspresso(method) ? torra.base.espressoTempC : torra.base.filtroTempC} °C${proc.ajuste.tempC ? ` (${proc.ajuste.tempC > 0 ? '+' : ''}${proc.ajuste.tempC} °C pelo processo)` : ''}.`);
+    if (method.id === 'suiren') por.push('Hario Suiren: as 12 aletas abertas dissipam calor rápido; a água mais quente no início compensa a perda térmica e o resfriamento natural no fim evita amargor.');
+    if (method.id === 'origami') por.push('Origami: receita calibrada para filtro cônico (fluxo ágil pelas 20 caneluras). Se usar filtro plano (Kalita Wave), engrosse 1–2 cliques para ganhar doçura e corpo.');
 
     // moagem
     let moagemOff = torra.base.moagem + proc.ajuste.moagem;
     if (canephora) moagemOff += 0.5;
     if (corpo >= 4 && (baseId(method) === 'v60' || baseId(method) === 'prensa-francesa')) { moagemOff += 0.25; }
+    // se o moedor não tiver ref própria de suiren/origami e estiver herdando da V60, compensa o fluxo maior
+    const usaFallbackBase = grinder && grinder.refs && grinder.refs[method.id] == null && method.base;
+    if (usaFallbackBase && method.id === 'suiren') moagemOff -= 0.25;
+    if (usaFallbackBase && method.id === 'origami') moagemOff -= 0.15;
     const clicks = grinder ? clicksForMethod(grinder, method, moagemOff) : null;
     if (moagemOff !== 0) por.push(`Moagem ${moagemOff > 0 ? 'mais grossa' : 'mais fina'} que o padrão do método (${r2(Math.abs(moagemOff))} passo).`);
 
@@ -177,7 +186,7 @@ window.Engine = (function () {
   const juntar = (a) => (a.length <= 1 ? a.join('') : a.slice(0, -1).join(', ') + ' e ' + a[a.length - 1]);
   const AMARGOR_TORRA = { clara: 1.5, 'media-clara': 2, media: 2.5, 'media-escura': 3.5, escura: 4.2 };
   const ACIDEZ_TORRA = { clara: 0.5, 'media-clara': 0.25, media: 0, 'media-escura': -0.5, escura: -1 };
-  const CORPO_METODO = { espresso: 1.2, moka: 1, 'prensa-francesa': 0.6, 'coador-pano': 0.4, clever: 0.2, aeropress: 0.2, 'cold-brew': 0.3, melitta: 0, kalita: 0, v60: -0.4, chemex: -0.7 };
+  const CORPO_METODO = { espresso: 1.2, moka: 1, 'prensa-francesa': 0.6, 'coador-pano': 0.4, clever: 0.2, aeropress: 0.2, 'cold-brew': 0.3, melitta: 0, kalita: 0, origami: -0.3, v60: -0.4, suiren: -0.5, chemex: -0.7 };
   const ATRIBUTOS = [['acidez', 'Acidez'], ['docura', 'Doçura'], ['amargor', 'Amargor'], ['corpo', 'Corpo'], ['final', 'Finalização']];
 
   function perfilEsperado(bean, method) {
@@ -191,7 +200,7 @@ window.Engine = (function () {
       acidez: meio(clamp(acB + (ACIDEZ_TORRA[torraId] || 0) - (canephora ? 0.5 : 0), 1, 5)),
       docura: meio(clamp(Math.max(3.5, doB), 1, 5)), // doçura: buscar o máximo que o grão entrega
       amargor: meio(clamp((AMARGOR_TORRA[torraId] || 2.5) + (canephora ? 0.7 : 0), 1, 5)),
-      corpo: meio(clamp(coB + (CORPO_METODO[baseId(method)] || 0), 1, 5)),
+      corpo: meio(clamp(coB + (CORPO_METODO[method && method.id] != null ? CORPO_METODO[method.id] : (CORPO_METODO[baseId(method)] || 0)), 1, 5)),
       final: 4,
       notas, familias: [...new Set(notas.map(familia).filter(Boolean))],
       torraId, torra: DB.torra[torraId], proc: DB.processo[b.processo] || null, reg, canephora
@@ -671,7 +680,7 @@ window.Engine = (function () {
    * Pontua o quanto um grão combina com um método a partir do terroir, da
    * torra, do perfil (acidez/corpo/doçura), das notas, do processo, do
    * descanso e do histórico real. Devolve os motivos que pesaram. */
-  const ESTILO = { v60: 'conico', chemex: 'conico', kalita: 'plano', b75: 'plano', melitta: 'plano', 'coador-pano': 'pano', clever: 'imersaoFiltro', aeropress: 'imersaoFiltro', 'prensa-francesa': 'prensa', espresso: 'espresso', moka: 'moka', 'cold-brew': 'cold' };
+  const ESTILO = { v60: 'conico', origami: 'conico', suiren: 'conico', chemex: 'conico', kalita: 'plano', b75: 'plano', melitta: 'plano', 'coador-pano': 'pano', clever: 'imersaoFiltro', aeropress: 'imersaoFiltro', 'prensa-francesa': 'prensa', espresso: 'espresso', moka: 'moka', 'cold-brew': 'cold' };
   const TORRA_FIT = {
     conico: { clara: 2, 'media-clara': 1.5, media: 0.5, 'media-escura': -1, escura: -2 },
     plano: { clara: 1, 'media-clara': 1.5, media: 1, 'media-escura': 0, escura: -1 },
@@ -709,8 +718,19 @@ window.Engine = (function () {
     if (est === 'conico') {
       if (ac >= 4) m(1.5, 'Acidez alta brilha na clareza do filtro cônico');
       if (frutaFloral) m(1, 'Notas frutadas/florais ficam nítidas');
-      if (co >= 4 && ac <= 2) m(-1, 'Perfil encorpado e pouco ácido perde graça no cônico');
+      if (co >= 4 && ac <= 2 && method.id !== 'origami') m(-1, 'Perfil encorpado e pouco ácido perde graça no cônico');
       if (FERMENTADOS.includes(b.processo)) m(0.5, 'Fermentado com xícara limpa e definida');
+      // Particularidades do Origami
+      if (method.id === 'origami') {
+        if (FERMENTADOS.includes(b.processo)) m(0.5, 'As 20 caneluras ventilam o papel e destacam aromas exóticos sem pesar');
+        if (doc >= 4 && (torraId === 'media' || torraId === 'media-clara')) m(0.5, 'Versátil: aceita filtro cônico (clareza) ou Kalita Wave (doçura e corpo)');
+      }
+      // Particularidades da Hario Suiren
+      if (method.id === 'suiren') {
+        if ((torraId === 'clara' || torraId === 'media-clara') && frutaFloral) m(1, 'As 12 pétalas abertas esfriam o final da extração e preservam florais delicados');
+        if (FERMENTADOS.includes(b.processo)) m(0.5, 'Queda térmica natural no terço final evita notas alcoólicas/boozy');
+        if (torraId === 'media-escura' || torraId === 'escura' || (co >= 4 && ac <= 2)) m(-1, 'Dissipação de calor das aletas abertas deixa torras escuras ou cafés pesados sub-extraídos');
+      }
     } else if (est === 'plano') {
       if (doc >= 4) m(1, 'Doçura alta: o fundo plano valoriza o equilíbrio');
       if (frutaFloral && ac >= 3) m(0.5, 'Extração uniforme preserva as notas de fruta');
