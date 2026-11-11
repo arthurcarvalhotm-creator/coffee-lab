@@ -76,6 +76,31 @@ window.Engine = (function () {
     return snap(grinder, base + sinal * off * stepClicks);
   }
 
+  /* Ajusta a moagem (cliques) quando a dose de grão muda em relação à dose base
+   * (10 g nos métodos gerais; 16 g no espresso). Um leito maior / maior volume de
+   * água oferece mais resistência hidráulica e tempo de contato, pedindo moagem
+   * proporcionalmente mais grossa; doses menores têm leito raso e pedem moagem
+   * mais fina para evitar sub-extração. */
+  function escalarMoagem(grinder, method, clicksBase, doseNova, doseBase) {
+    if (!grinder || clicksBase == null || clicksBase === '') return clicksBase;
+    const c0 = Number(clicksBase);
+    const d0 = Number(doseBase) || Number(method && method.dosePadrao) || (isEspresso(method) ? 16 : 10);
+    const d = Number(doseNova) || d0;
+    if (!d || !d0 || Math.abs(d - d0) < 0.05) return c0;
+    const step = passoAjuste(grinder, method);
+    const tipo = tipoMetodo(method);
+    let passosDose;
+    if (tipo === 'espresso') {
+      passosDose = clamp((d - d0) / 2, -2, 2.5);
+    } else if (tipo === 'filtro') {
+      passosDose = clamp((d - d0) / 10, -1, 3.5);
+    } else {
+      passosDose = clamp(((d - d0) / 10) * 0.75, -1, 2.5);
+    }
+    const sinalGrosso = grinder.direcao === 'maior=fino' ? -1 : 1; // padrão: maior número = mais grosso
+    return snap(grinder, c0 + sinalGrosso * passosDose * step);
+  }
+
   /* ---------- Ponto de partida para um grão novo ---------- */
   function startingPoint(bean, method, grinder) {
     const torra = DB.torra[bean.torra] || DB.torra['media'];
@@ -128,13 +153,18 @@ window.Engine = (function () {
     const usaFallbackBase = grinder && grinder.refs && grinder.refs[method.id] == null && method.base;
     if (usaFallbackBase && method.id === 'suiren') moagemOff -= 0.25;
     if (usaFallbackBase && method.id === 'origami') moagemOff -= 0.15;
-    const clicks = grinder ? clicksForMethod(grinder, method, moagemOff) : null;
     if (moagemOff !== 0) por.push(`Moagem ${moagemOff > 0 ? 'mais grossa' : 'mais fina'} que o padrão do método (${r2(Math.abs(moagemOff))} passo).`);
 
     // dose / água
     // dose de partida: 10 g (espresso 16 g); a dose do grão, se definida, vale fora do espresso
-    const dose = (!isEspresso(method) && Number(bean.dosePadrao)) || method.dosePadrao;
+    const doseBase = Number(method.dosePadrao) || (isEspresso(method) ? 16 : 10);
+    const dose = (!isEspresso(method) && Number(bean.dosePadrao)) || doseBase;
     const water = isEspresso(method) ? r1(dose * ratio) : Math.round(dose * ratio);
+    const clicksBase = grinder ? clicksForMethod(grinder, method, moagemOff) : null;
+    const clicks = grinder ? escalarMoagem(grinder, method, clicksBase, dose, doseBase) : null;
+    if (clicks != null && clicksBase != null && clicks !== clicksBase) {
+      por.push(`Dose de ${fmtN(dose)} g (base ${fmtN(doseBase)} g = ${fmtClicks(clicksBase)} cl): moagem ajustada para ${fmtClicks(clicks)} cl.`);
+    }
     const TS = faixaTempo(method, dose);
     if (tipoMetodo(method) === 'filtro' && dose <= 12) por.push(`Dose de ${fmtN(dose)} g: leito baixo drena mais rápido; a faixa de tempo (${fmtTempo(TS.min)}–${fmtTempo(TS.max)}) já considera essa dose.`);
 
@@ -802,5 +832,5 @@ window.Engine = (function () {
     return parts.join(' · ');
   }
 
-  return { baseId, faixaTempo, aptidao, startingPoint, diagnose, recommend, calibration, ey, receita, clicksForMethod, passoAjuste, snap, fmtTempo, fmtClicks, fmtReceita, fmtN, isEspresso, isPressao, tipoMetodo, perfilEsperado, leituraSensorial, familia, ATRIBUTOS };
+  return { baseId, faixaTempo, aptidao, startingPoint, diagnose, recommend, calibration, ey, receita, clicksForMethod, escalarMoagem, passoAjuste, snap, fmtTempo, fmtClicks, fmtReceita, fmtN, isEspresso, isPressao, tipoMetodo, perfilEsperado, leituraSensorial, familia, ATRIBUTOS };
 })();

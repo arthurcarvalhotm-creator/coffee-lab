@@ -330,7 +330,7 @@ window.CAFE_DB = (function () {
       receita: '10 g / 160 g. Com filtro cônico, moa ~1 ajuste mais fino que na V60 e despeje mais próximo do centro para destacar florais e acidez; com filtro Kalita Wave, use moagem média para ganhar corpo e doçura.'
     },
     {
-      id: 'suiren', nome: 'Hario V60 Suiren', curto: 'Hario Suiren', tipo: 'filtrado', icone: '🪷', fluxo: 7, base: 'v60',
+      id: 'suiren', nome: 'Hario Suiren/Lotus', curto: 'Hario Suiren/Lotus', tipo: 'filtrado', icone: '🪷', fluxo: 7, base: 'v60',
       ratio: { min: 14.5, max: 18, padrao: 16 }, dosePadrao: 10,
       tempC: { min: 90, max: 98, padrao: 94.5 }, tempoS: { min: 115, max: 170, padrao: 140 },
       grind: 3, microns: [500, 700], grindDesc: 'Média-fina (1–2 ajustes mais fina que V60)',
@@ -494,7 +494,7 @@ window.CAFE_DB = (function () {
       { t: 90, agua: 1.00, desc: '4º ataque: complete a água no centro e dê um leve giro (swirl) para assentar o leito.' },
       { t: 135, agua: 1.00, desc: 'Drenagem. No filtro cônico o escoamento é ágil; no filtro Wave o leito termina plano.' }
     ] },
-    suiren: { nome: 'Hario Suiren – bloom + 3 ataques (queda térmica natural)', etapas: [
+    suiren: { nome: 'Hario Suiren/Lotus – bloom + 3 ataques (queda térmica natural)', etapas: [
       { t: 0, agua: 0.20, desc: 'Bloom quente: despeje ~3× a dose em espiral rápida para aquecer o leito e abrir os florais.' },
       { t: 40, agua: 0.55, desc: '2º ataque: espiral contínua e firme até 55 %, mantendo o volume alto para reter calor.' },
       { t: 70, agua: 0.80, desc: '3º ataque: despeje suave no centro até 80 % da água.' },

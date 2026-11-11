@@ -22,7 +22,6 @@
     base: 'cafelab.sync.base',
     disp: 'cafelab.sync.dispositivo',
     ult: 'cafelab.sync.ultimo',
-    fbCfg: 'cafelab.sync.fbConfig',
     lgpd: 'cafelab.sync.lgpd',
     comPerfis: 'cafelab.comunidade.perfis',
     comItens: 'cafelab.comunidade.itens'
@@ -31,6 +30,24 @@
   const EXPIRA_LAPIDE = 90 * 86400 * 1000; // 90 dias
   const COLECOES = ['graos', 'moedores', 'extracoes', 'metodos', 'cafeina', 'latte'];
   const CONFIG_LOCAL = ['tema', 'catalogoVersao', 'moedoresVersao', 'estoqueMigrado', 'estoqueV2', 'dose10', '_mod', 'updatedAt'];
+
+  // Captura as credenciais do SDK em escopo privado e remove do objeto global window
+  const FB_CFG_INTERNO = (() => {
+    const raw = (typeof window !== 'undefined' && window.CAFE_FIREBASE_CONFIG) || {};
+    const cfg = Object.freeze({
+      apiKey: String(raw.apiKey || '').trim(),
+      authDomain: String(raw.authDomain || (raw.projectId ? `${String(raw.projectId).trim()}.firebaseapp.com` : '')).trim(),
+      projectId: String(raw.projectId || '').trim(),
+      storageBucket: String(raw.storageBucket || '').trim(),
+      messagingSenderId: String(raw.messagingSenderId || '').trim(),
+      appId: String(raw.appId || '').trim()
+    });
+    if (typeof window !== 'undefined') {
+      try { delete window.CAFE_FIREBASE_CONFIG; } catch (e) { window.CAFE_FIREBASE_CONFIG = undefined; }
+    }
+    try { localStorage.removeItem('cafelab.sync.fbConfig'); } catch (e) { /* */ }
+    return cfg;
+  })();
 
   const ls = {
     get: (k) => { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } },
@@ -180,41 +197,9 @@
     return null;
   }
 
-  /* ---------- Configuração Firebase Auth + Cloud Firestore ---------- */
+  /* ---------- Configuração Firebase Auth + Cloud Firestore (Escopo Privado) ---------- */
   function lerFbConfig() {
-    try {
-      const c = JSON.parse(ls.get(K.fbCfg) || 'null');
-      if (c && c.apiKey && c.projectId) return c;
-    } catch (e) { /* */ }
-    if (typeof window !== 'undefined' && window.CAFE_FIREBASE_CONFIG && window.CAFE_FIREBASE_CONFIG.apiKey && window.CAFE_FIREBASE_CONFIG.projectId) {
-      return window.CAFE_FIREBASE_CONFIG;
-    }
-    return { apiKey: '', projectId: '', authDomain: '' };
-  }
-
-  function extrairFbConfig(entrada, campos) {
-    const out = Object.assign({ apiKey: '', projectId: '', authDomain: '' }, campos || {});
-    if (entrada && typeof entrada === 'string') {
-      const mKey = entrada.match(/apiKey\s*[:=]\s*['"]([^'"]+)['"]/);
-      const mProj = entrada.match(/projectId\s*[:=]\s*['"]([^'"]+)['"]/);
-      const mDom = entrada.match(/authDomain\s*[:=]\s*['"]([^'"]+)['"]/);
-      if (mKey) out.apiKey = mKey[1].trim();
-      if (mProj) out.projectId = mProj[1].trim();
-      if (mDom) out.authDomain = mDom[1].trim();
-    }
-    if (out.projectId && !out.authDomain) out.authDomain = `${out.projectId}.firebaseapp.com`;
-    return out;
-  }
-
-  function salvarFbConfig(cfg) {
-    const limpo = {
-      apiKey: String((cfg && cfg.apiKey) || '').trim(),
-      projectId: String((cfg && cfg.projectId) || '').trim(),
-      authDomain: String((cfg && cfg.authDomain) || '').trim()
-    };
-    if (limpo.projectId && !limpo.authDomain) limpo.authDomain = `${limpo.projectId}.firebaseapp.com`;
-    ls.set(K.fbCfg, limpo.apiKey && limpo.projectId ? JSON.stringify(limpo) : '');
-    return limpo;
+    return FB_CFG_INTERNO;
   }
 
   function obterFirebaseAuth() {
@@ -820,13 +805,17 @@
   async function excluirContaNuvem() {
     await carregarContaCofre();
     const conta = contaAtiva();
+    const st = lab.state();
     if (conta && conta.uid) {
       const cfg = lerFbConfig();
       const uid = sanitizarId(conta.uid);
       if (cfg.projectId && cfg.apiKey) {
         try {
           const token = await obterIdTokenValido(true);
-          const colArrays = await Promise.all(COLECOES.map((col) => listarColecaoFs(uid, col).catch(() => [])));
+          const [colArrays, itensRemotos] = await Promise.all([
+            Promise.all(COLECOES.map((col) => listarColecaoFs(uid, col).catch(() => []))),
+            listarItensComunidade().catch(() => [])
+          ]);
           const docPrefix = `projects/${cfg.projectId}/databases/(default)/documents/users/${uid}`;
           const deletes = [];
           COLECOES.forEach((col, idx) => {
@@ -836,6 +825,19 @@
           });
           deletes.push({ delete: docPrefix });
           deletes.push({ delete: `projects/${cfg.projectId}/databases/(default)/documents/community_profiles/${uid}` });
+
+          // Exclui também todos os itens publicados pelo usuário em /community_items
+          const idsItens = new Set();
+          if (st && st.config && st.config.comunidade && Array.isArray(st.config.comunidade.meusItens)) {
+            st.config.comunidade.meusItens.forEach((it) => { if (it && it.id) idsItens.add(sanitizarId(it.id)); });
+          }
+          (itensRemotos || []).forEach((it) => {
+            if (it && it.id && it.autorUid === uid) idsItens.add(sanitizarId(it.id));
+          });
+          idsItens.forEach((itemId) => {
+            deletes.push({ delete: `projects/${cfg.projectId}/databases/(default)/documents/community_items/${itemId}` });
+          });
+
           await commitWritesFs(deletes).catch(() => {});
           if (token) {
             await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:delete?key=${encodeURIComponent(cfg.apiKey)}`, {
@@ -847,21 +849,41 @@
         } catch (e) { /* prossegue com limpeza local */ }
       }
     }
+    if (st && st.config) {
+      delete st.config.contaUid;
+      delete st.config.lgpd;
+      if (st.config.comunidade) {
+        st.config.comunidade.perfilPublico = false;
+        st.config.comunidade.meusItens = [];
+      }
+      salvandoPorSync = true; lab.save(); salvandoPorSync = false;
+    }
+    [K.lgpd, K.comPerfis, K.comItens].forEach((k) => ls.set(k, ''));
     await desativarLocal();
     return { ok: true };
   }
 
   /* ---------- API da Comunidade (Firestore /community_profiles e /community_items) ---------- */
+  function nomeAnonimizado(preferido, conta) {
+    const p = String(preferido || '').trim();
+    if (p && !p.includes('@')) return p.slice(0, 120);
+    const primeiro = conta && conta.nome ? String(conta.nome).trim().split(/\s+/)[0] : '';
+    return (primeiro && !primeiro.includes('@') ? primeiro : 'Barista').slice(0, 120);
+  }
+
   async function publicarPerfilComunidade(perfil) {
     const conta = await carregarContaCofre();
     const cfg = lerFbConfig();
     if (!conta || !conta.uid || !cfg.projectId) return { ok: false, offline: true };
+    if (!perfil || perfil.publico !== true) {
+      return removerPerfilComunidade();
+    }
     const uid = sanitizarId(conta.uid);
     const t = agora();
+    // Anonimização estrita (LGPD): nunca envia email nem foto do Google para coleções públicas
     const doc = {
       uid,
-      nome: String(perfil.nome || conta.nome || 'Barista').slice(0, 120),
-      foto: conta.foto ? String(conta.foto).slice(0, 1000) : null,
+      nome: nomeAnonimizado(perfil.nome, conta),
       nivel: Math.max(1, Math.min(100, Math.round(Number(perfil.nivel) || 1))),
       xpTotal: Math.max(0, Math.min(10000000, Math.round(Number(perfil.xpTotal) || 0))),
       tier: Math.max(1, Math.min(5, Math.round(Number(perfil.tier) || 1))),
@@ -872,7 +894,7 @@
       calibradas: Math.max(0, Math.min(100000, Math.round(Number(perfil.calibradas) || 0))),
       moedores: Array.isArray(perfil.moedores) ? perfil.moedores.slice(0, 20).map((s) => String(s).slice(0, 80)) : [],
       metodos: Array.isArray(perfil.metodos) ? perfil.metodos.slice(0, 20).map((s) => String(s).slice(0, 80)) : [],
-      publico: perfil.publico !== false,
+      publico: true,
       updatedAt: t,
       atualizadoEm: new Date(t).toISOString()
     };
@@ -899,7 +921,11 @@
     const lista = [];
     res.documents.forEach((d) => {
       const item = fromFsDoc(d);
-      if (item && item.uid && item.publico !== false) lista.push(item);
+      if (item && item.uid && item.publico === true) {
+        delete item.email;
+        delete item.foto;
+        lista.push(item);
+      }
     });
     lista.sort((a, b) => (Number(b.xpTotal) || 0) - (Number(a.xpTotal) || 0));
     try { ls.set(K.comPerfis, JSON.stringify(lista.slice(0, 80))); } catch (e) { /* */ }
@@ -911,24 +937,27 @@
     const cfg = lerFbConfig();
     const t = agora();
     const autorUid = conta && conta.uid ? sanitizarId(conta.uid) : 'local-barista';
-    const autorNome = (conta && conta.nome) || (lab.state().config && lab.state().config.apelidoBarista) || 'Barista da Bancada';
-    const itemId = sanitizarId(item.id || `${item.tipo}-${autorUid}-${t.toString(36)}`);
+    const apelidoCfg = (lab.state().config && lab.state().config.comunidade && lab.state().config.comunidade.apelido) || '';
+    const autorNome = String(item.autorNome || nomeAnonimizado(apelidoCfg, conta)).slice(0, 120);
+    const tipoValido = ['grao', 'receita', 'moedor', 'metodo'].includes(item.tipo) ? item.tipo : 'grao';
+    const rawId = sanitizarId(item.id || `${tipoValido}_${autorUid}_${t.toString(36)}`);
+    const itemId = rawId.includes(autorUid) ? rawId : sanitizarId(`com_${tipoValido}_${autorUid}_${rawId}`);
 
-    // Limpa payload para caber na validação (<= 50 chaves e sem fotos pesadas)
+    // Limpa payload para caber na validação (<= 50 chaves e sem fotos ou PII)
     const cleanPayload = {};
     Object.keys(item.payload || {}).slice(0, 45).forEach((k) => {
       const v = item.payload[k];
-      if (v === undefined || k === 'foto' || k === 'diag' || k === '_idbFoto') return;
+      if (v === undefined || k === 'foto' || k === 'email' || k === 'contaUid' || k === 'diag' || k === '_idbFoto') return;
       cleanPayload[k] = v;
     });
 
     const doc = {
       id: itemId,
       autorUid,
-      autorNome: String(autorNome).slice(0, 120),
+      autorNome,
       autorTier: Math.max(1, Math.min(5, Math.round(Number(item.autorTier) || 1))),
       autorNivel: Math.max(1, Math.min(100, Math.round(Number(item.autorNivel) || 1))),
-      tipo: ['grao', 'receita', 'moedor', 'metodo'].includes(item.tipo) ? item.tipo : 'grao',
+      tipo: tipoValido,
       titulo: String(item.titulo || 'Item compartilhado').slice(0, 200),
       subtitulo: item.subtitulo ? String(item.subtitulo).slice(0, 300) : null,
       resumo: item.resumo ? String(item.resumo).slice(0, 1000) : null,
@@ -1038,13 +1067,13 @@
     const conta = contaAtiva();
     const ult = ls.get(K.ult);
     const consentiu = ls.get(K.lgpd) === '1' || !!(lab.state().config && lab.state().config.lgpd);
-    const cfg = lerFbConfig();
+    const fotoSegura = conta && typeof conta.foto === 'string' && /^https:\/\//i.test(conta.foto.trim()) ? conta.foto.trim() : '';
 
     const html = `
       <div class="card ${ehPaginaCompleta ? 'stack' : ''}" style="${ehPaginaCompleta ? 'max-width:560px;margin:0 auto' : 'margin-top:12px'}">
         <div class="row between">
           <div>
-            <h3>☁ Login com Google &amp; Nuvem (Firebase)</h3>
+            <h3>☁ Login com Google &amp; Sincronização</h3>
             <p class="text-2" style="margin:4px 0 0">Sincronize automaticamente seus grãos, moedores, receitas calibradas, evolução do Pingo e conquistas entre celular, tablet e computador.</p>
           </div>
           ${conta ? '<span class="badge ok">Conectado</span>' : '<span class="badge">Modo convidado</span>'}
@@ -1054,13 +1083,13 @@
           <div class="card soft" style="margin-top:10px">
             <div class="row between">
               <div class="row" style="gap:10px">
-                ${conta.foto ? `<img src="${lab.esc(conta.foto)}" alt="" style="width:40px;height:40px;border-radius:50%;object-fit:cover;border:1px solid var(--border)">` : '<div class="ico">👤</div>'}
+                ${fotoSegura ? `<img src="${lab.esc(fotoSegura)}" alt="" referrerpolicy="no-referrer" style="width:40px;height:40px;border-radius:50%;object-fit:cover;border:1px solid var(--border)">` : '<div class="ico">👤</div>'}
                 <div>
                   <strong>${lab.esc(conta.nome || 'Conta Google')}</strong>
                   ${conta.email ? `<div class="s">${lab.esc(conta.email)}</div>` : ''}
                 </div>
               </div>
-              <a class="btn sm ghost" href="#/comunidade?tab=ranking">🥇 Ver no Ranking</a>
+              <a class="btn sm ghost" href="#/comunidade?tab=ranking">🥇 Comunidade</a>
             </div>
             <div class="s" id="syncStatus" style="margin-top:8px">${ult ? 'Última sincronização: ' + lab.fmtData(ult) : 'Sincronização automática ativa'}${ultimoErro ? ' · ' + lab.esc(ultimoErro) : ''}</div>
           </div>
@@ -1072,7 +1101,7 @@
         ` : `
           <label class="check" style="margin:10px 0">
             <input type="checkbox" id="syLgpd" ${consentiu ? 'checked' : ''}>
-            <span class="text-2" style="font-size:.86rem">Autorizo a sincronização em nuvem dos meus dados do diário de café e perfil de barista na minha conta Google (LGPD).</span>
+            <span class="text-2" style="font-size:.86rem">Autorizo a sincronização privada em nuvem dos meus dados do diário de café na minha conta Google (LGPD).</span>
           </label>
           <div class="row" style="gap:8px">
             <button class="btn primary" id="syGoogle" style="width:100%;justify-content:center">
@@ -1082,22 +1111,6 @@
           </div>
           <small class="muted" style="display:block;margin-top:6px">O uso sem conta continua 100% liberado e offline neste aparelho.</small>
         `}
-
-        <details class="recipe" style="margin-top:10px">
-          <summary>Configuração avançada do projeto Firebase (${lab.esc(cfg.projectId || 'não definido')})</summary>
-          <div style="margin-top:8px">
-            <p class="text-2"><small>Por padrão o app utiliza o arquivo <code>firebase-config.js</code>. Caso queira apontar para outro projeto Firebase próprio, cole abaixo o objeto <code>firebaseConfig</code> ou preencha os campos:</small></p>
-            <div class="form-grid">
-              <label class="field"><span class="lbl">Project ID</span><input type="text" id="syFbProj" value="${lab.esc(cfg.projectId || '')}" placeholder="coffee-lab"></label>
-              <label class="field"><span class="lbl">API Key</span><input type="text" id="syFbKey" value="${lab.esc(cfg.apiKey || '')}" placeholder="AIzaSy..."></label>
-              <label class="field full"><span class="lbl">Auth Domain</span><input type="text" id="syFbDom" value="${lab.esc(cfg.authDomain || '')}" placeholder="coffee-lab.firebaseapp.com"></label>
-            </div>
-            <div class="row" style="gap:8px">
-              <button class="btn sm" type="button" id="sySalvarFb">Salvar projeto Firebase</button>
-              <button class="btn sm ghost" type="button" id="syResetFb">Restaurar padrão</button>
-            </div>
-          </div>
-        </details>
       </div>`;
 
     const wrap = document.createElement('div');
@@ -1145,30 +1158,10 @@
     }
     if (q('#syExcluirConta')) {
       q('#syExcluirConta').onclick = async () => {
-        if (!window.confirm('Excluir PERMANENTEMENTE seus dados na nuvem, seu perfil público e sua conta conectada (Direito ao Esquecimento — LGPD)? Esta ação não pode ser desfeita.')) return;
+        if (!window.confirm('Excluir PERMANENTEMENTE seus dados na nuvem, seus itens compartilhados, seu perfil público e sua conta conectada (Direito ao Esquecimento — LGPD)? Esta ação não pode ser desfeita.')) return;
         lab.toast('Excluindo dados na nuvem…');
         await excluirContaNuvem();
         lab.toast('Dados em nuvem excluídos');
-        lab.render();
-      };
-    }
-    if (q('#sySalvarFb')) {
-      q('#sySalvarFb').onclick = () => {
-        const extraido = extrairFbConfig(q('#syFbKey').value, {
-          projectId: q('#syFbProj').value.trim(),
-          apiKey: q('#syFbKey').value.trim(),
-          authDomain: q('#syFbDom').value.trim()
-        });
-        if (!extraido.projectId || !extraido.apiKey) return lab.toast('Informe o Project ID e a API Key do Firebase.');
-        salvarFbConfig(extraido);
-        lab.toast('Configuração do Firebase salva');
-        lab.render();
-      };
-    }
-    if (q('#syResetFb')) {
-      q('#syResetFb').onclick = () => {
-        ls.set(K.fbCfg, '');
-        lab.toast('Configuração padrão restaurada');
         lab.render();
       };
     }
@@ -1194,8 +1187,6 @@
     contaAtiva,
     usuarioAtual: contaAtiva,
     iniciarLoginSocial,
-    salvarFbConfig,
-    lerFbConfig,
     toFsFields,
     fromFsFields,
     fromFsDoc,

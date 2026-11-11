@@ -8,6 +8,11 @@
   const $$ = (s, el) => Array.from((el || document).querySelectorAll(s));
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  const sanitizarId = (raw) => String(raw || '').replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 120) || uid();
+  const urlSegura = (u) => {
+    const s = String(u || '').trim();
+    return /^https?:\/\/[^\s"'<>]+$/i.test(s) ? s : '';
+  };
   const KEY = 'cafelab.v1';
   const BEAN = '<svg class="bean-ico" viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="8.5" cy="12.5" rx="4.6" ry="7" transform="rotate(-30 8.5 12.5)" fill="currentColor"/><path d="M6.2 6.9c2.4 1.9 2.6 4.4 1.3 6.5-1.2 2-1.4 3.6-.1 5.4" stroke="var(--surface)" stroke-width="1.3" fill="none" stroke-linecap="round"/><ellipse cx="16" cy="10.5" rx="4.2" ry="6.4" transform="rotate(25 16 10.5)" fill="currentColor" opacity=".8"/><path d="M13.6 5.3c2.3 1.6 2.7 3.9 1.7 5.8-1 1.9-1 3.4.3 5" stroke="var(--surface)" stroke-width="1.2" fill="none" stroke-linecap="round"/></svg>';
 
@@ -76,9 +81,33 @@
   })();
 
   /* ---------------- Estado / armazenamento ---------------- */
+  function sanitizarEstado(s) {
+    if (!s || typeof s !== 'object') return { graos: [], moedores: [], extracoes: [], metodos: [], config: { tema: 'auto', notaAlvo: 8 } };
+    ['graos', 'moedores', 'metodos', 'cafeina', 'latte'].forEach((col) => {
+      if (Array.isArray(s[col])) {
+        s[col].forEach((r) => {
+          if (r && typeof r === 'object') {
+            if (r.id) r.id = sanitizarId(r.id);
+            if (col === 'graos' && r.link) r.link = urlSegura(r.link);
+          }
+        });
+      }
+    });
+    if (Array.isArray(s.extracoes)) {
+      s.extracoes.forEach((x) => {
+        if (x && typeof x === 'object') {
+          if (x.id) x.id = sanitizarId(x.id);
+          if (x.graoId) x.graoId = sanitizarId(x.graoId);
+          if (x.metodoId) x.metodoId = sanitizarId(x.metodoId);
+          if (x.moedorId) x.moedorId = sanitizarId(x.moedorId);
+        }
+      });
+    }
+    return s;
+  }
   let state = load();
   function load() {
-    try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.graos) return s; } catch (e) { /* ignore */ }
+    try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.graos) return sanitizarEstado(s); } catch (e) { /* ignore */ }
     return { graos: [], moedores: [], extracoes: [], metodos: [], config: { tema: 'auto', notaAlvo: 8 } };
   }
   function save() {
@@ -1148,7 +1177,7 @@ Extraído no Laboratório de Cafeteria 🧪☕`;
           <h3>Receita executada</h3>
           <div class="form-grid">
             <label class="field"><span class="lbl">Moagem (cliques)</span><input type="number" name="clicks" inputmode="decimal" step="any"><div class="help" id="hClicks"></div></label>
-            <label class="field"><span class="lbl">Dose (g)</span><input type="number" name="dose" inputmode="decimal" step="0.1" required><div class="help">Mudar a dose recalcula a água mantendo a razão.</div></label>
+            <label class="field"><span class="lbl">Dose (g)</span><input type="number" name="dose" inputmode="decimal" step="0.1" required><div class="help">Mudar a dose recalcula a água (mantendo a razão) e ajusta a moagem.</div></label>
             <label class="field"><span class="lbl" id="lWater">Água (g)</span><input type="number" name="water" inputmode="decimal" step="0.1" required><div class="help">Editar recalcula a razão.</div></label>
             <label class="field"><span class="lbl">Razão (1:x)</span><input type="number" name="ratio" inputmode="decimal" step="0.01"><div class="help">Editar recalcula a água.</div></label>
             <label class="field"><span class="lbl">Temperatura (°C)</span><input type="number" name="tempC" inputmode="decimal" step="0.5" required></label>
@@ -1211,21 +1240,34 @@ Extraído no Laboratório de Cafeteria 🧪☕`;
     }
 
     function ctx() { return { g: grao(F('graoId').value), m: metodo(F('metodoId').value), md: moedor(F('moedorId').value) }; }
-    function aplicarReceita(p) {
-      if (p.clicks != null && F('moedorId').value) F('clicks').value = p.clicks;
+    /* Dose ↔ água ↔ razão ↔ moagem. Mexer na dose recalcula a água mantendo a
+     * razão e ajusta os cliques da moagem a partir da dose de referência (10 g
+     * nos métodos gerais; 16 g no espresso). */
+    let tempoTocado = false;
+    F('tempo').addEventListener('input', () => { tempoTocado = true; });
+    let aguaAnterior = null, camposTocados = false, doseTocada = false, refReceita = null, clicksRef = null, doseRef = null;
+    const arred = (v) => (E.isEspresso(ctx().m) ? Math.round(v * 10) / 10 : Math.round(v));
+    const escalada = (p, d) => {
+      if (!d || !p || d === p.dose) return p;
+      const { m, md } = ctx();
+      const clicks = p.clicks != null && md && E.escalarMoagem ? E.escalarMoagem(md, m, p.clicks, d, p.dose) : p.clicks;
+      return Object.assign({}, p, { dose: d, water: arred(d * p.ratio), clicks });
+    };
+    function aplicarReceita(p, baseRec) {
+      const ref = baseRec || refReceita || p;
+      if (p.clicks != null && F('moedorId').value) {
+        F('clicks').value = p.clicks;
+        clicksRef = ref && ref.clicks != null ? +ref.clicks : +p.clicks;
+      } else {
+        clicksRef = null;
+      }
+      doseRef = (ref && +ref.dose) || +p.dose || (ctx().m && ctx().m.dosePadrao) || 10;
       F('dose').value = p.dose; F('ratio').value = p.ratio; F('water').value = p.water; F('tempC').value = p.tempC;
       if (p.tempoS && (!F('tempo').value || !tempoTocado)) F('tempo').value = tempoCampo(p.tempoS);
       aguaAnterior = +p.water || null;
       preencherPlano();
       atualizarReferencia();
     }
-    /* Dose ↔ água ↔ razão. Mexer na dose recalcula a água mantendo a razão;
-     * os despejos e o card de referência acompanham a nova água. */
-    let tempoTocado = false;
-    F('tempo').addEventListener('input', () => { tempoTocado = true; });
-    let aguaAnterior = null, camposTocados = false, doseTocada = false, refReceita = null;
-    const arred = (v) => (E.isEspresso(ctx().m) ? Math.round(v * 10) / 10 : Math.round(v));
-    const escalada = (p, d) => (d && p && d !== p.dose ? Object.assign({}, p, { dose: d, water: arred(d * p.ratio) }) : p);
     function escalarDespejos(nova) {
       const velha = aguaAnterior; aguaAnterior = nova || null;
       if (!velha || !nova || velha === nova) return;
@@ -1237,14 +1279,30 @@ Extraído no Laboratório de Cafeteria 🧪☕`;
       if (E.tipoMetodo(m) === 'filtro') { const T = E.faixaTempo(m, +F('dose').value || m.dosePadrao); h.textContent = `Faixa para ${E.fmtN(+F('dose').value || m.dosePadrao)} g: ${E.fmtTempo(T.min)}–${E.fmtTempo(T.max)}`; }
       else h.textContent = `Faixa do método: ${E.fmtTempo(m.tempoS.min)}–${E.fmtTempo(m.tempoS.max)}`;
     }
+    function hintClicks() {
+      const { m, md } = ctx(), h = $('#hClicks'); if (!h) return;
+      if (!md) { h.textContent = 'Cadastre um moedor para receber cliques exatos.'; return; }
+      const baseTxt = `${md.nome}: ${md.min}–${md.max}, passo ${md.passo || 1} (${md.direcao === 'maior=fino' ? 'maior = mais fino' : 'menor = mais fino'})`;
+      const d = +F('dose').value || (m && m.dosePadrao) || 10;
+      const dBase = doseRef || (m && m.dosePadrao) || (E.isEspresso(m) ? 16 : 10);
+      if (clicksRef != null && d && dBase && Math.abs(d - dBase) >= 0.05) {
+        const cEsc = E.escalarMoagem ? E.escalarMoagem(md, m, clicksRef, d, dBase) : clicksRef;
+        h.textContent = `${baseTxt} · Ajustada p/ ${E.fmtN(d)} g: ${E.fmtClicks(cEsc)} cl (base ${E.fmtN(dBase)} g = ${E.fmtClicks(clicksRef)} cl)`;
+      } else {
+        h.textContent = baseTxt;
+      }
+    }
     function atualizarReferencia() {
       hintTempo();
+      hintClicks();
       const box = $('#sugestao'); if (!refReceita || !box) return;
       const { m } = ctx(), d = +F('dose').value || refReceita.dose, p = escalada(refReceita, d);
       const set = (k, v) => { const el = $(`[data-ref="${k}"]`, box); if (el) el.innerHTML = v; };
       set('dose', `${E.fmtN(p.dose)} g`); set('water', `${E.fmtN(p.water)} g`);
+      if (p.clicks != null) set('clicks', `${E.fmtClicks(p.clicks)} cl`);
       if (E.tipoMetodo(m) === 'filtro') { const T = E.faixaTempo(m, p.dose); set('tempo', `${E.fmtTempo(T.min)}–${E.fmtTempo(T.max)}`); }
-      set('nota', p.dose !== refReceita.dose ? `Referência ajustada para ${E.fmtN(p.dose)} g, mantendo a razão 1:${E.fmtN(p.ratio)} (sugestão original: ${E.fmtN(refReceita.dose)} g → ${E.fmtN(refReceita.water)} g).` : '');
+      const mudMoagem = p.clicks != null && refReceita.clicks != null && p.clicks !== refReceita.clicks ? ` e moagem ${E.fmtClicks(p.clicks)} cl (base ${E.fmtN(refReceita.dose)} g: ${E.fmtClicks(refReceita.clicks)} cl)` : '';
+      set('nota', p.dose !== refReceita.dose ? `Referência ajustada para ${E.fmtN(p.dose)} g, mantendo a razão 1:${E.fmtN(p.ratio)}${mudMoagem} (sugestão original: ${E.fmtN(refReceita.dose)} g → ${E.fmtN(refReceita.water)} g).` : '');
       const pl = $('[data-ref="plano"]', box); if (pl) { const rc = E.receita(m, p.dose, p.water); pl.innerHTML = rc ? tabelaReceita(rc, m, false) : ''; }
     }
     function preencherPlano() {
@@ -1295,7 +1353,7 @@ Extraído no Laboratório de Cafeteria 🧪☕`;
           <small>Última: ${fmtData(ult.data)} · nota ${ult.nota || '—'} · ${esc(ult.diag.rotulo)}</small>
           ${leituraHtml(reco)}
           ${acoesHtml(reco)}
-          <div class="kv" style="margin-top:8px"><div><span class="lbl">Dose</span><div class="v" data-ref="dose">${E.fmtN(reco.prox.dose)} g</div></div><div><span class="lbl">${E.isEspresso(m) ? 'Bebida' : 'Água'}</span><div class="v" data-ref="water">${E.fmtN(reco.prox.water)} g</div></div><div><span class="lbl">Razão</span><div class="v">1:${E.fmtN(reco.prox.ratio)}</div></div></div>
+          <div class="kv" style="margin-top:8px">${reco.prox.clicks != null ? `<div><span class="lbl">Moagem</span><div class="v" data-ref="clicks">${E.fmtClicks(reco.prox.clicks)} cl</div></div>` : ''}<div><span class="lbl">Dose</span><div class="v" data-ref="dose">${E.fmtN(reco.prox.dose)} g</div></div><div><span class="lbl">${E.isEspresso(m) ? 'Bebida' : 'Água'}</span><div class="v" data-ref="water">${E.fmtN(reco.prox.water)} g</div></div><div><span class="lbl">Razão</span><div class="v">1:${E.fmtN(reco.prox.ratio)}</div></div></div>
           <small class="muted" data-ref="nota"></small>
           ${(() => { const rc = E.receita(m, reco.prox.dose, reco.prox.water); return rc ? `<details class="recipe" style="margin-top:8px"><summary>Plano de despejos · ${esc(rc.nome)}</summary><div data-ref="plano">${tabelaReceita(rc, m, false)}</div></details>` : ''; })()}
           <div class="inline-actions"><button class="btn primary sm" type="button" id="usar">Usar esta receita</button><a class="btn sm" href="#/extracao/${ult.id}">Ver última</a></div>
@@ -1306,7 +1364,7 @@ Extraído no Laboratório de Cafeteria 🧪☕`;
         html = `<div class="card reco" style="margin-top:12px">
           <div class="row between"><h3>Ponto de partida sugerido</h3><span class="badge accent">1ª extração</span></div>
           <div class="kv">
-            ${sp.clicks != null ? `<div><span class="lbl">Moagem</span><div class="v">${E.fmtClicks(sp.clicks)} cl</div></div>` : ''}
+            ${sp.clicks != null ? `<div><span class="lbl">Moagem</span><div class="v" data-ref="clicks">${E.fmtClicks(sp.clicks)} cl</div></div>` : ''}
             <div><span class="lbl">Dose</span><div class="v" data-ref="dose">${E.fmtN(sp.dose)} g</div></div>
             <div><span class="lbl">${E.isEspresso(m) ? 'Bebida' : 'Água'}</span><div class="v" data-ref="water">${E.fmtN(sp.water)} g</div></div>
             <div><span class="lbl">Razão</span><div class="v">1:${E.fmtN(sp.ratio)}</div></div>
@@ -1321,7 +1379,7 @@ Extraído no Laboratório de Cafeteria 🧪☕`;
       }
       $('#sugestao').innerHTML = html;
       refReceita = receita;
-      $('#usar').onclick = () => { const d = +F('dose').value; aplicarReceita(doseTocada && d ? escalada(receita, d) : receita); camposTocados = false; toast('Receita aplicada aos campos'); };
+      $('#usar').onclick = () => { const d = +F('dose').value; aplicarReceita(doseTocada && d ? escalada(receita, d) : receita, receita); camposTocados = false; toast('Receita aplicada aos campos'); };
       return receita;
     }
     let mAnterior = ctx().m;
@@ -1331,16 +1389,27 @@ Extraído no Laboratório de Cafeteria 🧪☕`;
       // troca de grão/método aplica a nova referência (se você não editou os campos), mantendo a dose que você escolheu
       if (rec && (!F('dose').value || (!camposTocados && !editando))) {
         const manter = doseTocada && +F('dose').value && E.isEspresso(m0) === E.isEspresso(mAnterior);
-        aplicarReceita(manter ? escalada(rec, +F('dose').value) : rec);
+        aplicarReceita(manter ? escalada(rec, +F('dose').value) : rec, rec);
       } else atualizarReferencia();
       aplicarPerfilEsperado();
     }));
-    ['clicks', 'tempC'].forEach((n) => F(n).addEventListener('input', () => { camposTocados = true; }));
+    F('clicks').addEventListener('input', () => {
+      camposTocados = true;
+      const d = +F('dose').value || (ctx().m && ctx().m.dosePadrao) || 10;
+      clicksRef = F('clicks').value !== '' ? +F('clicks').value : null;
+      doseRef = d;
+      hintClicks();
+    });
+    F('tempC').addEventListener('input', () => { camposTocados = true; });
     F('dose').addEventListener('input', () => {
       doseTocada = true;
+      const { m, md } = ctx();
       const d = +F('dose').value, rt = +F('ratio').value;
       if (d && rt) { F('water').value = arred(d * rt); escalarDespejos(+F('water').value); }
       else if (d && +F('water').value) F('ratio').value = Math.round((+F('water').value / d) * 100) / 100;
+      if (d && md && clicksRef != null && E.escalarMoagem) {
+        F('clicks').value = E.escalarMoagem(md, m, clicksRef, d, doseRef);
+      }
       atualizarReferencia();
     });
     F('ratio').addEventListener('input', () => { camposTocados = true; const d = +F('dose').value, rt = +F('ratio').value; if (d && rt) { F('water').value = arred(d * rt); escalarDespejos(+F('water').value); } });
@@ -1842,7 +1911,7 @@ Extraído no Laboratório de Cafeteria 🧪☕`;
       };
       f.addEventListener('submit', (e) => {
         e.preventDefault();
-        const o = { ...g, id: g.id || uid(), nome: F('nome').value.trim(), produtor: F('produtor').value.trim(), torrefacao: F('torrefacao').value.trim(), regiao: F('regiao').value, variedade: F('variedade').value.trim(), processo: F('processo').value, torra: F('torra').value, especie: F('especie').value, dataTorra: F('dataTorra').value, altitude: F('altitude').value ? +F('altitude').value : null, dosePadrao: F('dosePadrao').value ? +F('dosePadrao').value : null, acidez: +F('acidez').value, corpo: +F('corpo').value, docura: +F('docura').value, notas: chipsVal(sheet, 'notas'), obs: F('obs').value.trim(), pesoPacote: F('pesoPacote').value ? +F('pesoPacote').value : null, usadoAntes: F('usadoAntes').value ? +F('usadoAntes').value : 0, pontuacao: F('pontuacao').value.trim(), kit: F('kit').value.trim(), link: F('link').value.trim(), criadoEm: g.criadoEm || new Date().toISOString() };
+        const o = { ...g, id: g.id || uid(), nome: F('nome').value.trim(), produtor: F('produtor').value.trim(), torrefacao: F('torrefacao').value.trim(), regiao: F('regiao').value, variedade: F('variedade').value.trim(), processo: F('processo').value, torra: F('torra').value, especie: F('especie').value, dataTorra: F('dataTorra').value, altitude: F('altitude').value ? +F('altitude').value : null, dosePadrao: F('dosePadrao').value ? +F('dosePadrao').value : null, acidez: +F('acidez').value, corpo: +F('corpo').value, docura: +F('docura').value, notas: chipsVal(sheet, 'notas'), obs: F('obs').value.trim(), pesoPacote: F('pesoPacote').value ? +F('pesoPacote').value : null, usadoAntes: F('usadoAntes').value ? +F('usadoAntes').value : 0, pontuacao: F('pontuacao').value.trim(), kit: F('kit').value.trim(), link: urlSegura(F('link').value.trim()), criadoEm: g.criadoEm || new Date().toISOString() };
         if (foto) { o.foto = foto; CafeFotoStore.set(o.id, foto); } else { delete o.foto; CafeFotoStore.del(o.id); }
         // pacotes e "sem estoque": adicionar pacotes desmarca sozinho; a caixa manda quando você a mexe
         o.pacotes = F('pacotes').value === '' ? 1 : Math.max(0, Math.round(+F('pacotes').value));
@@ -1883,7 +1952,7 @@ Extraído no Laboratório de Cafeteria 🧪☕`;
           <span>📦 Estoque: ${restante(g) != null ? `${badgeEstoque(g)} <small class="muted">${pacotes(g)} pacote${pacotes(g) === 1 ? '' : 's'} de ${g.pesoPacote} g</small>` : `<small class="muted">${g.semEstoque ? '<span class="badge">sem estoque</span> ' : ''}informe o peso do pacote</small>`}</span>
           <span class="row" style="gap:6px">${+g.pesoPacote ? '<button class="btn sm" id="maisPacote">＋1 pacote</button>' : ''}<label class="check"><input type="checkbox" id="semEst" ${g.semEstoque ? 'checked' : ''}> Sem estoque</label></span>
         </div>
-        ${g.kit ? `<p class="text-2" style="margin:8px 0 0"><small>🛒 ${esc(g.kit)}${g.link ? ` · <a href="${esc(g.link)}" target="_blank" rel="noopener">página do café ↗</a>` : ''}</small></p>` : ''}
+        ${g.kit ? `<p class="text-2" style="margin:8px 0 0"><small>🛒 ${esc(g.kit)}${urlSegura(g.link) ? ` · <a href="${esc(urlSegura(g.link))}" target="_blank" rel="noopener noreferrer">página do café ↗</a>` : ''}</small></p>` : ''}
         ${g.obs ? `<p class="text-2" style="margin:8px 0 0"><small>📝 ${esc(g.obs)}</small></p>` : ''}
         ${g.notas && g.notas.length ? `<p class="text-2" style="margin:8px 0 0"><small>${g.notas.map(esc).join(' · ')}</small></p>` : ''}
         <p class="text-2" style="margin:8px 0 0"><small>${esc(reg.dica)}</small></p>
@@ -2082,7 +2151,7 @@ Extraído no Laboratório de Cafeteria 🧪☕`;
     $('#exp').onclick = () => { const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `cafelab-backup-${new Date().toISOString().slice(0, 10)}.json`; document.body.appendChild(a); a.click(); a.remove(); };
     $('#expCsv').onclick = () => exportarCSV(state.extracoes);
     $('#copy').onclick = async () => { try { await navigator.clipboard.writeText(JSON.stringify(state)); toast('Copiado'); } catch (e) { toast('Não foi possível copiar'); } };
-    const importar = (txt) => { try { const s = JSON.parse(txt); if (!s || !Array.isArray(s.graos) || !Array.isArray(s.extracoes)) throw new Error('formato'); if (!confirmar(`Importar ${s.graos.length} grão(s), ${(s.moedores || []).length} moedor(es) e ${s.extracoes.length} extração(ões)? Isso substitui os dados atuais.`)) return; state = { graos: s.graos, moedores: s.moedores || [], extracoes: s.extracoes, metodos: s.metodos || [], cafeina: s.cafeina || state.cafeina || [], latte: s.latte || state.latte || [], config: s.config || state.config }; save(); applyTheme(); toast('Backup importado'); go('#/inicio'); } catch (e) { toast('Arquivo inválido'); } };
+    const importar = (txt) => { try { const s = JSON.parse(txt); if (!s || !Array.isArray(s.graos) || !Array.isArray(s.extracoes)) throw new Error('formato'); if (!confirmar(`Importar ${s.graos.length} grão(s), ${(s.moedores || []).length} moedor(es) e ${s.extracoes.length} extração(ões)? Isso substitui os dados atuais.`)) return; state = sanitizarEstado({ graos: s.graos, moedores: s.moedores || [], extracoes: s.extracoes, metodos: s.metodos || [], cafeina: s.cafeina || state.cafeina || [], latte: s.latte || state.latte || [], config: s.config || state.config }); save(); applyTheme(); toast('Backup importado'); go('#/inicio'); } catch (e) { toast('Arquivo inválido'); } };
     $('#imp').onchange = (e) => { const fl = e.target.files[0]; if (!fl) return; const rd = new FileReader(); rd.onload = () => importar(rd.result); rd.readAsText(fl); };
     $('#impTxt').onclick = () => importar($('#paste').value);
     $('#alvo').onchange = (e) => { state.config.notaAlvo = +e.target.value || 8; save(); toast('Salvo'); };
@@ -2138,7 +2207,7 @@ Extraído no Laboratório de Cafeteria 🧪☕`;
   /* ---------------- API para módulos (timer, rótulo, cafeína) ---------------- */
   const hooks = { home: [], tiles: [], mais: [], ajustes: [], extracaoSalva: [], extracaoEditada: [], extracaoExcluida: [], salvo: [], boot: [] };
   window.CafeLab = {
-    state: () => state, save, carregarDemo, routes, render, go, toast, modal, closeModal, esc, uid, $, $$, fmtData, parseTempo,
+    state: () => state, save, registrarMetodos, carregarDemo, routes, render, go, toast, modal, closeModal, esc, uid, sanitizarId, urlSegura, $, $$, fmtData, parseTempo,
     grao, moedor, metodo, extracao, BEAN, hooks, nowLocal, fotoStore: CafeFotoStore, exportarCSV
   };
 

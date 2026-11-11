@@ -38,14 +38,15 @@ rules_version = '2';
 // 3. Collection: /community_profiles/{userId}
 //    Document ID: {userId} (matches Firebase Auth UID)
 //    Access: Publicly readable for leaderboard & barista bench showcase; owner-only write/delete
+//    PII Hardening: 'email', 'foto', 'phone', and 'telefone' are strictly forbidden (uses Pingo SVG tier avatar)
 //    Fields:
 //      - uid: string (required, must equal userId and request.auth.uid, immutable) - Barista UID
 //      - nome: string (required, 1..120 chars) - Display name
 //      - nivel: number (required, 1..100) - Barista XP level
 //      - xpTotal: number (required, 0..10000000) - Total accumulated XP
 //      - tier: number (required, 1..5) - Barista mastery tier
+//      - publico: bool (required, must equal true) - Explicit public opt-in flag
 //      - updatedAt: number (required, >= 0) - Last profile sync epoch ms
-//      - foto: string or null (optional, max 1000 chars) - Avatar URL
 //      - titulo: string or null (optional, max 120 chars) - Barista rank title
 //      - badgesCount: number or null (optional, 0..50) - Unlocked badge count
 //      - badges: list or null (optional, max 50 items) - Unlocked badge IDs
@@ -53,19 +54,19 @@ rules_version = '2';
 //      - calibradas: number or null (optional, 0..100000) - Total calibrated beans
 //      - moedores: list or null (optional, max 30 items) - Showcase grinder names
 //      - metodos: list or null (optional, max 30 items) - Showcase brewing method names
-//      - publico: bool or null (optional) - Visibility flag
 //      - atualizadoEm: string or null (optional, max 64 chars) - ISO 8601 timestamp string
 //
 // 4. Collection: /community_items/{itemId}
 //    Document ID: {itemId} (matches item id)
 //    Access: Publicly readable for community showcase & 1-tap import; author-only write/delete
+//    PII Hardening: 'email', 'foto', 'autorEmail', 'autorFoto' forbidden on root and 'foto', 'email' forbidden in payload
 //    Fields:
 //      - id: string (required, must equal itemId, 1..128 chars, immutable) - Shared item ID
 //      - autorUid: string (required, must equal request.auth.uid, 1..128 chars, immutable) - Author UID
 //      - autorNome: string (required, 1..120 chars) - Author display name
 //      - tipo: string (required, in ['grao', 'receita', 'moedor', 'metodo']) - Shared item category
 //      - titulo: string (required, 1..200 chars) - Item title
-//      - payload: map (required, max 50 keys) - Sanitized item data for 1-tap import
+//      - payload: map (required, max 50 keys, no 'foto' or 'email') - Sanitized item data for 1-tap import
 //      - updatedAt: number (required, >= 0) - Publication/update epoch ms
 //      - autorTier: number or null (optional, 1..5) - Author mastery tier
 //      - autorNivel: number or null (optional, 1..100) - Author level
@@ -211,13 +212,18 @@ service cloud.firestore {
 
     // Validate /community_profiles/{userId} public barista profile document
     function isValidCommunityProfile(userId, data) {
-      return hasRequiredFields(['uid', 'nome', 'nivel', 'xpTotal', 'tier', 'updatedAt']) &&
+      return hasRequiredFields(['uid', 'nome', 'nivel', 'xpTotal', 'tier', 'publico', 'updatedAt']) &&
         data.keys().size() <= 20 &&
         // Prevent privilege escalation fields
         !('role' in data) &&
         !('roles' in data) &&
         !('isAdmin' in data) &&
         !('admin' in data) &&
+        // Enforce strict PII anonymization (only Pingo SVG tier avatar allowed)
+        !('email' in data) &&
+        !('foto' in data) &&
+        !('phone' in data) &&
+        !('telefone' in data) &&
         // Required fields validation
         data.uid is string &&
         data.uid == userId &&
@@ -234,10 +240,11 @@ service cloud.firestore {
         data.tier is number &&
         data.tier >= 1 &&
         data.tier <= 5 &&
+        data.publico is bool &&
+        data.publico == true &&
         data.updatedAt is number &&
         data.updatedAt >= 0 &&
         // Optional fields validation
-        isValidOptionalString(data, 'foto', 1000) &&
         isValidOptionalString(data, 'titulo', 120) &&
         isValidOptionalNumber(data, 'badgesCount', 0, 50) &&
         isValidOptionalList(data, 'badges', 50) &&
@@ -245,7 +252,6 @@ service cloud.firestore {
         isValidOptionalNumber(data, 'calibradas', 0, 100000) &&
         isValidOptionalList(data, 'moedores', 30) &&
         isValidOptionalList(data, 'metodos', 30) &&
-        (!('publico' in data) || data.publico == null || data.publico is bool) &&
         isValidOptionalString(data, 'atualizadoEm', 64);
     }
 
@@ -253,6 +259,11 @@ service cloud.firestore {
     function isValidCommunityItem(itemId, data) {
       return hasRequiredFields(['id', 'autorUid', 'autorNome', 'tipo', 'titulo', 'payload', 'updatedAt']) &&
         data.keys().size() <= 25 &&
+        // Enforce strict PII anonymization on root document
+        !('email' in data) &&
+        !('foto' in data) &&
+        !('autorEmail' in data) &&
+        !('autorFoto' in data) &&
         // Required fields validation
         data.id is string &&
         data.id == itemId &&
@@ -272,6 +283,8 @@ service cloud.firestore {
         data.titulo.size() <= 200 &&
         data.payload is map &&
         data.payload.keys().size() <= 50 &&
+        !('foto' in data.payload) &&
+        !('email' in data.payload) &&
         data.updatedAt is number &&
         data.updatedAt >= 0 &&
         // Optional fields validation

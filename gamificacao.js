@@ -350,6 +350,22 @@
     }
   ];
 
+  const sanitizarId = (raw) => String(raw || 'item').replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 80) || 'item';
+  function primeiroNomeUsuario(u) {
+    if (!u || !u.nome) return '';
+    const p = String(u.nome).trim().split(/\s+/)[0] || '';
+    return p.includes('@') ? '' : p;
+  }
+  function iconeSeguroMetodo(mObj) {
+    if (!mObj) return '☕';
+    if (typeof mObj.icone === 'string' && mObj.icone.trim().startsWith('<svg')) return mObj.icone;
+    if (window.IconesMetodo && mObj.ico) {
+      const svg = window.IconesMetodo.svg(mObj.ico);
+      if (svg) return svg;
+    }
+    return '☕';
+  }
+
   /* ---------- estado local da comunidade e preferências ---------- */
   function cfgComunidade() {
     const s = lab.state();
@@ -357,7 +373,8 @@
     if (!s.config.comunidade || typeof s.config.comunidade !== 'object') {
       s.config.comunidade = {
         apelido: '',
-        perfilPublico: true,
+        perfilPublico: false,
+        perfilPublicoOptIn: true,
         compartilhados: 0,
         importados: 0,
         meusItens: [],
@@ -368,7 +385,12 @@
     const c = s.config.comunidade;
     if (!Array.isArray(c.meusItens)) c.meusItens = [];
     if (!Array.isArray(c.badgesCelebradas)) c.badgesCelebradas = [];
-    if (c.perfilPublico === undefined) c.perfilPublico = true;
+    // Privado por padrão (Opt-In explícito LGPD): migra perfis antigos que não tinham opt-in explícito
+    if (!c.perfilPublicoOptIn) {
+      c.perfilPublico = false;
+      c.perfilPublicoOptIn = true;
+    }
+    if (typeof c.perfilPublico !== 'boolean') c.perfilPublico = false;
     return c;
   }
 
@@ -438,7 +460,7 @@
       mapa[m.id] = {
         methodId: m.id,
         nome: m.nome,
-        icone: m.icone || '☕',
+        icone: iconeSeguroMetodo(m),
         xp: 0,
         level: 1,
         nextLevelXp: 100,
@@ -460,7 +482,7 @@
         mapa[mid] = {
           methodId: mid,
           nome: mObj.nome || mid,
-          icone: mObj.icone || '☕',
+          icone: iconeSeguroMetodo(mObj),
           xp: 0,
           level: 1,
           nextLevelXp: 100,
@@ -779,7 +801,7 @@
   async function sincronizarPerfilPublico() {
     if (!window.CafeSync || !window.CafeSync.usuarioAtual || !window.CafeSync.usuarioAtual()) return null;
     const com = cfgComunidade();
-    if (com.perfilPublico === false) {
+    if (com.perfilPublico !== true) {
       try { await window.CafeSync.removerPerfilComunidade(); } catch (e) { /* */ }
       return null;
     }
@@ -790,9 +812,9 @@
     const metodosUsados = p.methodMasteries.filter((m) => m.extractionsCount > 0).map((m) => m.nome.split(' (')[0]).slice(0, 6);
     const metodos = metodosUsados.length ? metodosUsados : ['V60', 'Origami', 'Espresso'];
     try {
+      // Anonimização de PII: nunca envia foto nem e-mail da conta Google
       return await window.CafeSync.publicarPerfilComunidade({
-        nome: (com.apelido || '').trim() || u.nome || 'Barista do Lab',
-        foto: u.foto || '',
+        nome: (com.apelido || '').trim() || primeiroNomeUsuario(u) || 'Barista do Lab',
         nivel: p.level,
         xpTotal: p.totalXp,
         tier: p.pingoStage.tier,
@@ -815,8 +837,9 @@
     const com = cfgComunidade();
     if (com.apelido && com.apelido.trim()) return com.apelido.trim();
     const u = window.CafeSync && window.CafeSync.usuarioAtual && window.CafeSync.usuarioAtual();
-    if (u && u.nome) return u.nome;
-    return 'Minha Bancada';
+    const primeiro = primeiroNomeUsuario(u);
+    if (primeiro) return primeiro;
+    return 'Barista da Bancada';
   }
 
   async function compartilharItem(tipo, obj) {
@@ -824,7 +847,8 @@
     const p = calcularPerfilBarista();
     const com = cfgComunidade();
     const u = window.CafeSync && window.CafeSync.usuarioAtual && window.CafeSync.usuarioAtual();
-    const autorUid = (u && u.uid) || 'local_user';
+    const autorUid = sanitizarId((u && u.uid) || 'local_user');
+    const objIdLimpo = sanitizarId(obj.id || lab.uid());
     const autorNome = `${nomeAutorLocal()} · ${p.title}`;
     let item = null;
 
@@ -833,7 +857,7 @@
       const proc = (DB.processo && DB.processo[obj.processo]) || { nome: obj.processo || 'Natural' };
       const tor = (DB.torra && DB.torra[obj.torra]) || { nome: obj.torra || 'Média' };
       item = {
-        id: `com_grao_${obj.id}`,
+        id: `com_grao_${autorUid}_${objIdLimpo}`,
         autorUid,
         autorNome,
         autorTier: p.pingoStage.tier,
@@ -864,7 +888,7 @@
       const g = lab.grao(obj.graoId) || {};
       const m = lab.metodo(obj.metodoId) || { id: obj.metodoId, nome: obj.metodoId };
       item = {
-        id: `com_receita_${obj.id}`,
+        id: `com_receita_${autorUid}_${objIdLimpo}`,
         autorUid,
         autorNome,
         autorTier: p.pingoStage.tier,
@@ -902,7 +926,7 @@
     } else if (tipo === 'moedor') {
       const refsCount = Object.keys(obj.refs || {}).length;
       item = {
-        id: `com_moedor_${obj.id}`,
+        id: `com_moedor_${autorUid}_${objIdLimpo}`,
         autorUid,
         autorNome,
         autorTier: p.pingoStage.tier,
@@ -925,18 +949,30 @@
         }
       };
     } else if (tipo === 'metodo') {
+      const ratioPad = (obj.ratio && obj.ratio.padrao) || obj.ratioPadrao || 16;
+      const tempPad = (obj.tempC && obj.tempC.padrao) || obj.tempPadrao || 93;
       item = {
-        id: `com_metodo_${obj.id}`,
+        id: `com_metodo_${autorUid}_${objIdLimpo}`,
         autorUid,
         autorNome,
         autorTier: p.pingoStage.tier,
         tipo: 'metodo',
         titulo: obj.nome || 'Método Personalizado',
-        subtitulo: `Base ${(lab.metodo(obj.base) || {}).nome || obj.base || 'Filtro'} · 1:${obj.ratioPadrao || 16}`,
-        resumo: obj.obs || 'Método personalizado de bancada.',
-        tags: ['Método Personalizado', `1:${obj.ratioPadrao || 16}`, `${obj.tempPadrao || 93} °C`],
+        subtitulo: `Base ${(lab.metodo(obj.base) || {}).nome || obj.base || 'Filtro'} · 1:${ratioPad}`,
+        resumo: obj.obs || obj.receita || 'Método personalizado de bancada.',
+        tags: ['Método Personalizado', `1:${ratioPad}`, `${tempPad} °C`],
         updatedAt: new Date().toISOString(),
-        payload: Object.assign({}, obj)
+        payload: {
+          nome: obj.nome,
+          base: obj.base || 'v60',
+          ico: obj.ico || 'chaleira',
+          dosePadrao: obj.dosePadrao || 10,
+          ratioPadrao: ratioPad,
+          tempPadrao: tempPad,
+          tempoMin: (obj.tempoS && obj.tempoS.min) || obj.tempoMin || 150,
+          tempoMax: (obj.tempoS && obj.tempoS.max) || obj.tempoMax || 195,
+          obs: obj.obs || obj.receita || ''
+        }
       };
     }
 
@@ -1104,16 +1140,20 @@
         lab.go('#/equipamentos');
         return;
       }
+      const ratioPad = Number(p.ratioPadrao || (p.ratio && p.ratio.padrao) || 16);
+      const tempPad = Number(p.tempPadrao || (p.tempC && p.tempC.padrao) || 93);
+      const tMin = Number(p.tempoMin || (p.tempoS && p.tempoS.min) || 150);
+      const tMax = Number(p.tempoMax || (p.tempoS && p.tempoS.max) || 195);
       const novoMetodo = {
         id: 'custom_' + lab.uid(),
         nome: p.nome || item.titulo,
         base: p.base || 'v60',
-        icone: p.icone || '🧪',
-        dosePadrao: Number(p.dosePadrao || 15),
-        ratioPadrao: Number(p.ratioPadrao || 16),
-        tempPadrao: Number(p.tempPadrao || 93),
-        tempoMin: Number(p.tempoMin || 150),
-        tempoMax: Number(p.tempoMax || 195),
+        ico: p.ico || 'chaleira',
+        dosePadrao: Number(p.dosePadrao || 10),
+        ratio: { min: Math.max(1, ratioPad - 2), max: ratioPad + 2, padrao: ratioPad },
+        tempC: { min: Math.max(80, tempPad - 4), max: Math.min(100, tempPad + 3), padrao: tempPad },
+        tempoS: { min: tMin, max: tMax, padrao: Math.round((tMin + tMax) / 2) },
+        receita: p.obs || p.receita || `Importado da Comunidade (${item.autorNome}).`,
         obs: p.obs || `Importado da Comunidade (${item.autorNome}).`,
         updatedAt: new Date().toISOString()
       };
@@ -1250,8 +1290,7 @@
     mapa.set(meuUid, {
       uid: meuUid,
       isMe: true,
-      nome: (com.apelido || '').trim() || (u && u.nome) || 'Você (Sua Bancada)',
-      foto: (u && u.foto) || '',
+      nome: (com.apelido || '').trim() || primeiroNomeUsuario(u) || 'Você (Sua Bancada)',
       nivel: perfilLocal.level,
       xpTotal: perfilLocal.totalXp,
       tier: perfilLocal.pingoStage.tier,
@@ -1450,20 +1489,20 @@
           <div class="row between" style="flex-wrap:wrap;gap:8px">
             <div>
               <h3 style="margin:0">👤 Meu Perfil na Comunidade</h3>
-              <small class="text-2">${u ? `Conectado como ${lab.esc(u.email || u.nome)}` : 'Defina seu apelido de barista e escolha se sua bancada aparece no ranking público.'}</small>
+              <small class="text-2">Defina seu apelido de barista e escolha se sua bancada aparece no ranking público (seu e-mail e foto pessoal nunca são exibidos).</small>
             </div>
             ${!u ? '<a class="btn sm primary" href="#/sync">☁ Conectar Google</a>' : '<button class="btn sm" id="btnSyncPerfil">🔄 Atualizar no Ranking</button>'}
           </div>
           <div class="form-grid" style="margin-top:10px">
             <label class="field">
               <span class="lbl">Apelido de Barista</span>
-              <input type="text" id="inpApelido" placeholder="Ex.: Arthur · Lab Café" value="${lab.esc(com.apelido || (u && u.nome) || '')}">
+              <input type="text" id="inpApelido" placeholder="Ex.: coffee-master01" value="${lab.esc(com.apelido || primeiroNomeUsuario(u) || '')}">
             </label>
             <label class="field" style="justify-content:flex-end">
-              <span class="lbl">Visibilidade da Bancada</span>
+              <span class="lbl">Visibilidade da Bancada (Opt-In)</span>
               <label class="check" style="margin-top:6px">
-                <input type="checkbox" id="chkPublico" ${com.perfilPublico !== false ? 'checked' : ''}>
-                Exibir meu nível e equipamentos no ranking
+                <input type="checkbox" id="chkPublico" ${com.perfilPublico === true ? 'checked' : ''}>
+                Exibir meu nível e equipamentos no ranking público
               </label>
             </label>
           </div>
@@ -1554,6 +1593,7 @@
     if (chkPublico) {
       chkPublico.onchange = () => {
         com.perfilPublico = chkPublico.checked;
+        com.perfilPublicoOptIn = true;
         lab.save();
         sincronizarPerfilPublico();
         lab.toast(com.perfilPublico ? 'Bancada visível no ranking público' : 'Bancada ocultada do ranking público');
