@@ -1888,14 +1888,14 @@ Extraído no Laboratório de Cafeteria 🧪☕`;
         const feitos = [];
         const set = (name, val, rotulo) => { if (val == null || val === '' || !F(name)) return; F(name).value = val; F(name).classList.add('scanned'); feitos.push(rotulo); };
         if (c.regiao && DB.regiao[c.regiao]) { F('regiao').value = c.regiao; F('regiao').dispatchEvent(new Event('change')); F('regiao').classList.add('scanned'); feitos.push('região'); }
-        if (!F('nome').value.trim()) set('nome', c.nome, 'nome'); set('produtor', c.produtor, 'produtor'); set('torrefacao', c.torrefacao, 'torrefação');
+        set('nome', c.nome, 'nome'); set('produtor', c.produtor, 'produtor'); set('torrefacao', c.torrefacao, 'torrefação');
         set('variedade', c.variedade, 'variedade');
         if (c.processo && DB.processo[c.processo]) set('processo', c.processo, 'processo');
         if (c.torra && DB.torra[c.torra]) set('torra', c.torra, 'torra');
         if (c.especie) set('especie', c.especie, 'espécie');
         set('dataTorra', c.dataTorra, 'data da torra'); set('altitude', c.altitude || '', 'altitude'); set('pontuacao', c.pontuacao, 'pontuação');
         if (c.notas && c.notas.length) { $$('[data-chips="notas"] .chip', sheet).forEach((ch) => ch.classList.toggle('on', c.notas.includes(ch.dataset.v))); feitos.push('notas'); }
-        if (c.obs) { F('obs').value = (F('obs').value ? F('obs').value + '\n' : '') + c.obs; feitos.push('observações'); }
+        set('obs', c.obs, 'observações');
         return feitos;
       }
       const del = $('#delGrao', sheet);

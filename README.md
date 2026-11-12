@@ -89,7 +89,7 @@ Todos os valores da biblioteca são referências de bancada, não regras absolut
 
 Em **Mais → Backup e ajustes → Leitura de rótulos por IA**, escolha o provedor e cole a chave:
 
-- **Gemini**: crie a chave em [aistudio.google.com](https://aistudio.google.com) → *Get API key*. Há cota gratuita; no plano gratuito o Google pode usar o conteúdo enviado para melhorar os modelos. O modelo padrão é `gemini-3.8-flash` e dá para digitar outro id se o Google lançar ou aposentar modelos.
+- **Gemini**: crie a chave em [aistudio.google.com](https://aistudio.google.com) → *Get API key*. Há cota gratuita; no plano gratuito o Google pode usar o conteúdo enviado para melhorar os modelos. No modo **Automático** (padrão), **toda tentativa começa sempre pelo modelo mais recente** disponível para a sua chave (`gemini-4-hydrogen` e depois `gemini-3.8-flash`), descobre lançamentos pela API, desce automaticamente para versões anteriores/mais leves (`gemini-3.6-flash`, `gemini-3.5-flash-lite`, `gemini-3.1-flash-lite`, `gemini-3-flash-preview`) em caso de sobrecarga ou cota, e recorre ao OCR local se todos os modelos falharem. Quem tiver conta paga também pode escolher `gemini-4-argon` manualmente. Use **Testar chave e atualizar modelos** nos ajustes após colar a chave.
 - **Claude**: crie a chave em [console.anthropic.com](https://console.anthropic.com) → *API Keys*. Cobrado por uso.
 
 As chaves ficam só no aparelho. Como o app roda inteiro no navegador, qualquer pessoa com acesso ao seu celular desbloqueado poderia ver a chave; use uma chave própria para este app e com limite de gastos.

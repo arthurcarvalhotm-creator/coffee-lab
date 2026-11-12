@@ -28,13 +28,46 @@
   const KEY_PROV = 'cafelab.ia.provedor';
   const KEY_GEM = 'cafelab.gemini.key';
   const KEY_GEM_MODEL = 'cafelab.gemini.model';
-  const MODELOS_GEMINI = [
-    { id: 'gemini-2.5-flash', nome: 'Gemini 2.5 Flash (padrão, recomendado)' },
-    { id: 'gemini-2.0-flash', nome: 'Gemini 2.0 Flash' },
-    { id: 'gemini-1.5-flash', nome: 'Gemini 1.5 Flash' }
+  const KEY_GEM_CAT = 'cafelab.gemini.catalogo';
+  const GEM_AUTO = 'auto';
+  const GEM_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
+  const CATALOGO_VERSAO = 2;
+  const CATALOGO_TTL_MS = 60 * 60 * 1000;
+  const ESCADA_GEMINI_PADRAO = [
+    'gemini-4-hydrogen',
+    'gemini-3.8-flash',
+    'gemini-3.6-flash',
+    'gemini-3.5-flash-lite',
+    'gemini-3.1-flash-lite',
+    'gemini-3-flash-preview'
   ];
-  const getGemKey = () => lsGet(KEY_GEM);
-  const getGemModel = () => lsGet(KEY_GEM_MODEL) || MODELOS_GEMINI[0].id;
+  const MODELOS_GEMINI = [
+    { id: GEM_AUTO, nome: 'Automático (sempre do mais recente)' },
+    { id: 'gemini-4-hydrogen', nome: 'Gemini 4 Hydrogen (mais recente)' },
+    { id: 'gemini-3.8-flash', nome: 'Gemini 3.8 Flash' },
+    { id: 'gemini-3.6-flash', nome: 'Gemini 3.6 Flash' },
+    { id: 'gemini-3.5-flash-lite', nome: 'Gemini 3.5 Flash-Lite (rápido/leve)' },
+    { id: 'gemini-3.1-flash-lite', nome: 'Gemini 3.1 Flash-Lite' },
+    { id: 'gemini-4-argon', nome: 'Gemini 4 Argon (plano pago)' }
+  ];
+  try { sessionStorage.removeItem('cafelab.gemini.cooldown'); } catch (e) { /* */ }
+  const normalizarModeloGeminiId = (id) => String(id || '').trim().replace(/^models\//, '');
+  function ehModeloGeminiLegado(id) {
+    const m = normalizarModeloGeminiId(id).toLowerCase();
+    if (!m) return false;
+    if (/^gemini-(?:1|2)(?:\.|$|-)/.test(m)) return true;
+    return m === 'gemini-3.5-flash' || m.startsWith('gemini-3.5-flash-0') || m === 'gemini-3.7-flash';
+  }
+  const getGemKey = () => lsGet(KEY_GEM).trim();
+  function getGemModel() {
+    const salvo = normalizarModeloGeminiId(lsGet(KEY_GEM_MODEL));
+    if (!salvo) return GEM_AUTO;
+    if (ehModeloGeminiLegado(salvo)) {
+      lsSet(KEY_GEM_MODEL, '');
+      return GEM_AUTO;
+    }
+    return salvo;
+  }
   /* provedor ativo: o escolhido, se tiver chave; senão o que tiver chave */
   function provedor() {
     const escolhido = lsGet(KEY_PROV);
@@ -147,98 +180,338 @@ Ids de torra: ${torras}.`;
   /* Converte o JSON da IA (Claude ou Gemini) nos campos do formulário */
   function mapear(txt, quem, aviso) {
     let j;
-    try { j = JSON.parse(String(txt).replace(/^```(?:json)?\s*|\s*```$/g, '')); } catch (e) { throw new Error('A IA devolveu um formato inesperado. Tente novamente.'); }
+    const limpo = String(txt || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+    try { j = JSON.parse(limpo); } catch (e) { throw new Error('A IA devolveu um formato inesperado. Tente novamente.'); }
+    if (!j || typeof j !== 'object' || Array.isArray(j)) throw new Error('A IA devolveu um formato inesperado. Tente novamente.');
     const ok = (v, tabela) => (v && tabela[v] ? v : '');
-    const obs = [j.notas_originais && j.notas_originais.length ? 'Notas do rótulo: ' + j.notas_originais.join(', ') : '', j.observacoes].filter(Boolean).join(' · ');
+    const str = (v) => (v == null ? '' : String(v).trim());
+    const notasOrig = Array.isArray(j.notas_originais) ? j.notas_originais.map(str).filter(Boolean) : [];
+    const obsExtra = str(j.observacoes);
+    const obs = [notasOrig.length ? 'Notas do rótulo: ' + notasOrig.join(', ') : '', obsExtra].filter(Boolean).join(' · ');
     return {
       fonte: 'ia', quem,
-      texto: j.texto_lido || '',
+      texto: str(j.texto_lido),
       campos: {
-        nome: j.nome, torrefacao: j.torrefacao, produtor: j.produtor, regiao: ok(j.regiao, DB.regiao), variedade: j.variedade,
-        processo: ok(j.processo, DB.processo), torra: ok(j.torra, DB.torra), especie: ['arabica', 'canephora', 'blend'].includes(j.especie) ? j.especie : '',
-        altitude: +j.altitude_m || '', dataTorra: /^\d{4}-\d{2}-\d{2}$/.test(j.data_torra || '') ? j.data_torra : '',
-        pontuacao: j.pontuacao, notas: (j.notas || []).filter((n) => DB.descritores.includes(n)), obs
+        nome: str(j.nome), torrefacao: str(j.torrefacao), produtor: str(j.produtor), regiao: ok(str(j.regiao), DB.regiao), variedade: str(j.variedade),
+        processo: ok(str(j.processo), DB.processo), torra: ok(str(j.torra), DB.torra), especie: ['arabica', 'canephora', 'blend'].includes(str(j.especie)) ? str(j.especie) : '',
+        altitude: +j.altitude_m || '', dataTorra: /^\d{4}-\d{2}-\d{2}$/.test(str(j.data_torra)) ? str(j.data_torra) : '',
+        pontuacao: str(j.pontuacao), notas: (Array.isArray(j.notas) ? j.notas : []).filter((n) => DB.descritores.includes(n)), obs
       },
       aviso: aviso || ''
     };
   }
 
-  /* Prepara schema para o Gemini: remove strings vazias de enums e remove additionalProperties */
+  /* Clona schema completo ou em versão compatível (sem strings vazias/additionalProperties) */
+  const clonarSchema = (s) => JSON.parse(JSON.stringify(s));
   function prepararSchemaGemini(s) {
-    const copy = JSON.parse(JSON.stringify(s));
+    const copy = clonarSchema(s);
     function limpar(obj) {
       if (!obj || typeof obj !== 'object') return;
       delete obj.additionalProperties;
-      if (Array.isArray(obj.enum)) {
-        obj.enum = obj.enum.filter((v) => v !== '');
-      }
-      for (const k of Object.keys(obj)) {
-        limpar(obj[k]);
-      }
+      if (Array.isArray(obj.enum)) obj.enum = obj.enum.filter((v) => v !== '');
+      for (const k of Object.keys(obj)) limpar(obj[k]);
     }
     limpar(copy);
     return copy;
   }
 
-  /* ---------- Gemini (Google AI Studio, REST) ---------- */
-  async function lerComGemini(canvas, progresso) {
-    progresso('Enviando foto para o Gemini…');
-    let model = getGemModel();
-    const data = canvas.toDataURL('image/jpeg', 0.85).split(',')[1];
-    const schema = prepararSchemaGemini(SCHEMA);
-    const corpo = (comSchema) => ({
-      contents: [{ role: 'user', parts: [
-        { inline_data: { mime_type: 'image/jpeg', data } },
-        { text: promptClaude() + (comSchema ? '' : '\n\nResponda somente com um objeto JSON com estas chaves: ' + Object.keys(SCHEMA.properties).join(', ') + '.') }
-      ] }],
-      generationConfig: Object.assign({ responseMimeType: 'application/json', temperature: 0.1 }, comSchema ? { responseSchema: schema } : {})
-    });
-    const chamar = async (comSchema) => {
-      let r;
-      try {
-        r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': getGemKey() }, body: JSON.stringify(corpo(comSchema))
-        });
-      } catch (e) { return { r: { ok: false, status: 0, statusText: 'rede' }, j: {} }; } // sem resposta: rede ou erro do Google sem CORS
+  /* ---------- Gemini: descoberta em cache, Interactions API e descida de modelo ---------- */
+  const escHtml = (s) => String(s || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  function hashChaveCurto(key) {
+    let h = 2166136261;
+    const s = String(key || '');
+    for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return (h >>> 0).toString(36);
+  }
+
+  // Aceita apenas família rápida com visão+JSON no modo automático (Gemini 4+ Hydrogen e Gemini 3+ Flash/Flash-Lite)
+  function parsearModeloRapidoGemini(id) {
+    const norm = normalizarModeloGeminiId(id);
+    if (!norm || ehModeloGeminiLegado(norm)) return null;
+    const m = norm.match(/^gemini-(\d+)(?:\.(\d+))?-(hydrogen|flash)(?:-(lite))?(?:-(preview))?$/i);
+    if (!m) return null;
+    const major = parseInt(m[1], 10);
+    if (major < 3) return null;
+    return {
+      id: norm,
+      estavel: m[5] ? 0 : 1,
+      major,
+      minor: m[2] ? parseInt(m[2], 10) : 0,
+      familia: m[3].toLowerCase() === 'hydrogen' ? 2 : 1,
+      cheio: m[4] ? 0 : 1
+    };
+  }
+
+  function ordenarModelosGemini(ids) {
+    const mapa = new Map();
+    for (const raw of ids || []) {
+      const p = parsearModeloRapidoGemini(raw);
+      if (p && !mapa.has(p.id)) mapa.set(p.id, p);
+    }
+    return Array.from(mapa.values()).sort((a, b) =>
+      (b.estavel - a.estavel) || (b.major - a.major) || (b.minor - a.minor) || (b.familia - a.familia) || (b.cheio - a.cheio) || a.id.localeCompare(b.id)
+    ).map((x) => x.id);
+  }
+
+  async function fetchJsonTimeout(url, options, timeoutMs) {
+    const temAbort = typeof AbortController === 'function';
+    const ctrl = temAbort ? new AbortController() : null;
+    let timer = null;
+    if (ctrl && timeoutMs > 0) timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const r = await fetch(url, ctrl ? Object.assign({}, options, { signal: ctrl.signal }) : options);
       const j = await r.json().catch(() => ({}));
-      return { r, j };
-    };
-    const espera = (ms) => new Promise((res) => setTimeout(res, ms));
-    const tentar = async () => {
-      let { r, j } = await chamar(true);
-      // modelos/versões que não aceitam responseSchema: tenta de novo só com JSON no prompt
-      if (r.status === 400 && /responseSchema|responseJsonSchema|response_json_schema|schema/i.test(JSON.stringify(j))) ({ r, j } = await chamar(false));
-      return { r, j };
-    };
-    // 503 (sobrecarga) e 500 são passageiros: tenta de novo e, se persistir, passa para outro modelo Gemini
-    const passageiro = (r) => r.status === 503 || r.status === 500 || r.status === 0;
-    let { r, j } = await tentar();
-    for (const espMs of [2000, 5000]) {
-      if (!passageiro(r)) break;
-      progresso('Gemini sobrecarregado, tentando de novo…'); await espera(espMs); ({ r, j } = await tentar());
+      return { r, j, timedOut: false };
+    } catch (e) {
+      const timedOut = !!(e && e.name === 'AbortError');
+      return { r: { ok: false, status: 0, statusText: timedOut ? 'tempo esgotado' : 'rede' }, j: {}, timedOut };
+    } finally {
+      if (timer) clearTimeout(timer);
     }
-    if (passageiro(r)) {
-      for (const alt of MODELOS_GEMINI.map((m) => m.id).filter((id) => id !== model)) {
-        progresso(`Gemini sobrecarregado, tentando ${alt}…`); model = alt; ({ r, j } = await tentar());
-        if (!passageiro(r)) break;
-      }
+  }
+
+  function ehErroChaveGemini(status, msg) {
+    const txt = String(msg || '');
+    if (status === 401) return true;
+    if (status === 400 && /api[\s_-]?key|api_key_invalid|unregistered caller/i.test(txt)) return true;
+    if (status === 403) {
+      if (/api[\s_-]?key|leaked|suspended|disabled|has not been used|not enabled|referer|referrer|unrestricted/i.test(txt)) return true;
+      if (/model|tier|billing|quota|free/i.test(txt)) return false;
+      return true;
     }
+    return false;
+  }
+
+  function ehErroDeModeloOuSobrecarga(status, msg) {
+    if (status === 0 || status === 408 || status === 429 || status === 500 || status === 502 || status === 503 || status === 504 || status === 529 || status === 404 || status === 403) return true;
+    return status === 400 && /model.*not.*(found|supported|available)|unsupported model|is deprecated|no longer supported/i.test(String(msg || ''));
+  }
+
+  function resumoMotivoGemini(r, j, timedOut) {
+    if (timedOut) return 'tempo esgotado';
+    if (r.status === 0) return 'sem resposta/rede';
+    if (r.status === 429) return 'cota/limite (429)';
+    if (r.status === 503 || r.status === 529) return `sobrecarga (${r.status})`;
+    if (r.status === 404) return 'modelo indisponível (404)';
+    if (r.status === 403) return 'sem acesso ao modelo (403)';
+    const msg = (j && j.error && j.error.message) || r.statusText || '';
+    return `HTTP ${r.status}${msg ? ' — ' + String(msg).slice(0, 60) : ''}`;
+  }
+
+  async function listarModelosGemini(key, timeoutMs) {
+    const { r, j, timedOut } = await fetchJsonTimeout(`${GEM_API_BASE}/models?pageSize=200`, {
+      method: 'GET',
+      headers: { 'x-goog-api-key': key }
+    }, timeoutMs || 8000);
     if (!r.ok) {
-      const msg = (j.error && j.error.message) || r.statusText;
-      if (r.status === 400 && /API key/i.test(msg)) throw new Error('Chave do Gemini inválida. Confira em Mais → Backup e ajustes.');
-      if (r.status === 403) throw new Error('A chave do Gemini não tem acesso a este modelo ou à API. Confira no Google AI Studio.');
-      if (r.status === 404) throw new Error(`Modelo "${model}" não encontrado. Escolha outro nos ajustes.`);
-      if (r.status === 429) throw new Error('Limite de uso do Gemini atingido. Tente de novo em instantes.');
-      if (r.status === 0 && navigator.onLine === false) throw new Error('Sem conexão com a internet. Conecte-se e tente de novo.');
-      if (r.status === 0) throw new Error('Não consegui falar com o Gemini depois de várias tentativas. Pode ser instabilidade do Google ou da sua rede (Wi-Fi/dados). Tente de novo em instantes ou troque o provedor em Mais → Backup e ajustes.');
-      if (passageiro(r)) throw new Error('O Gemini está sobrecarregado agora (erro 503 do Google, passageiro). Tente de novo em alguns minutos ou troque o provedor em Mais → Backup e ajustes.');
-      throw new Error(`Erro do Gemini (${r.status}): ${String(msg).slice(0, 200)}`);
+      const msg = (j && j.error && j.error.message) || r.statusText || '';
+      const err = new Error(
+        ehErroChaveGemini(r.status, msg)
+          ? 'Chave do Gemini inválida, bloqueada ou sem permissão na API. Confira em Mais → Backup e ajustes.'
+          : (r.status === 0 ? (timedOut ? 'Tempo esgotado ao consultar modelos Gemini.' : 'Sem conexão com a API do Gemini.') : `Erro ao listar modelos (${r.status}): ${String(msg).slice(0, 140)}`)
+      );
+      err.status = r.status;
+      err.fatalKey = ehErroChaveGemini(r.status, msg);
+      throw err;
+    }
+    const lista = Array.isArray(j.models) ? j.models : [];
+    const brutos = lista
+      .filter((m) => m && (!Array.isArray(m.supportedGenerationMethods) || m.supportedGenerationMethods.includes('generateContent')))
+      .map((m) => normalizarModeloGeminiId(m.name));
+    return {
+      flash: ordenarModelosGemini(brutos),
+      temArgon: brutos.includes('gemini-4-argon')
+    };
+  }
+
+  function lerCatalogoCacheGemini(tag) {
+    try {
+      const cat = JSON.parse(lsGet(KEY_GEM_CAT) || 'null');
+      if (cat && cat.v === CATALOGO_VERSAO && cat.tag === tag && Array.isArray(cat.modelos) && cat.modelos.length) return cat;
+    } catch (e) { /* */ }
+    return null;
+  }
+
+  async function atualizarCatalogoGemini(key, timeoutMs) {
+    const tag = hashChaveCurto(key);
+    const { flash, temArgon } = await listarModelosGemini(key, timeoutMs);
+    const ordenados = ordenarModelosGemini(flash.concat(ESCADA_GEMINI_PADRAO));
+    lsSet(KEY_GEM_CAT, JSON.stringify({ v: CATALOGO_VERSAO, tag, ts: Date.now(), modelos: ordenados, temArgon }));
+    return { modelos: ordenados, temArgon };
+  }
+
+  async function obterCatalogoGemini(key, opts) {
+    const o = opts || {};
+    const tag = hashChaveCurto(key);
+    const cache = lerCatalogoCacheGemini(tag);
+    const fresco = cache && (Date.now() - cache.ts < CATALOGO_TTL_MS);
+    if (!o.forcar && fresco) return { modelos: ordenarModelosGemini(cache.modelos.concat(ESCADA_GEMINI_PADRAO)), temArgon: !!cache.temArgon, origem: 'cache' };
+    try {
+      const res = await atualizarCatalogoGemini(key, o.timeoutMs || 1500);
+      return Object.assign(res, { origem: 'rede' });
+    } catch (e) {
+      if (o.forcar || (e && e.fatalKey)) throw e;
+      if (cache) return { modelos: ordenarModelosGemini(cache.modelos.concat(ESCADA_GEMINI_PADRAO)), temArgon: !!cache.temArgon, origem: 'cache-expirado' };
+      return { modelos: ESCADA_GEMINI_PADRAO.slice(), temArgon: false, origem: 'padrao' };
+    }
+  }
+
+  async function resolverModelosGemini(key, escolhaExplicita, opts) {
+    const o = opts || {};
+    const escolha = normalizarModeloGeminiId(escolhaExplicita != null ? escolhaExplicita : getGemModel()) || GEM_AUTO;
+    const cat = await obterCatalogoGemini(key, { forcar: !!o.forcar, timeoutMs: o.timeoutMs });
+    const baseModelos = cat.modelos.length ? cat.modelos : ESCADA_GEMINI_PADRAO.slice();
+    // Sem cooldown entre tentativas: cada leitura começa sempre pelo modelo preferido/mais recente e desce se falhar
+    const escada = (escolha !== GEM_AUTO && !ehModeloGeminiLegado(escolha))
+      ? [escolha].concat(baseModelos.filter((m) => m !== escolha))
+      : baseModelos.slice();
+    return { escada, modeloPreferido: escada[0], temArgon: cat.temArgon, origemCatalogo: cat.origem };
+  }
+
+  function extrairTextoInteractions(j) {
+    if (!j || typeof j !== 'object') return '';
+    if (typeof j.output_text === 'string' && j.output_text.trim()) return j.output_text;
+    if (Array.isArray(j.steps)) {
+      const partes = [];
+      for (const s of j.steps) {
+        if (!s || (s.type && s.type !== 'model_output' && s.type !== 'text')) continue;
+        if (typeof s.text === 'string') partes.push(s.text);
+        if (typeof s.content === 'string') partes.push(s.content);
+        else if (Array.isArray(s.content)) {
+          for (const b of s.content) {
+            if (b && b.type === 'text' && typeof b.text === 'string') partes.push(b.text);
+          }
+        }
+      }
+      if (partes.length) return partes.join('');
+    }
+    if (Array.isArray(j.outputs)) {
+      const out = j.outputs.filter((o) => o && typeof o.text === 'string').map((o) => o.text).join('');
+      if (out) return out;
     }
     const cand = (j.candidates || [])[0];
-    if (!cand) throw new Error('O Gemini não processou esta imagem' + (j.promptFeedback && j.promptFeedback.blockReason ? ` (${j.promptFeedback.blockReason})` : '') + '.');
-    if (cand.finishReason && !['STOP', 'MAX_TOKENS'].includes(cand.finishReason)) throw new Error(`O Gemini interrompeu a resposta (${cand.finishReason}). Tente outra foto.`);
-    const txt = ((cand.content && cand.content.parts) || []).map((p) => p.text || '').join('');
-    return mapear(txt, 'Gemini', model !== getGemModel() ? `Respondido por ${model}, porque o modelo escolhido estava sobrecarregado.` : '');
+    return ((cand && cand.content && cand.content.parts) || []).map((p) => p.text || '').join('');
+  }
+
+  async function chamarGeminiInteractions(model, key, promptBase, data, timeoutMs) {
+    const endpoint = `${GEM_API_BASE}/interactions`;
+    const headers = { 'Content-Type': 'application/json', 'x-goog-api-key': key };
+    const enviar = (modoSchema, comThinking) => {
+      const texto = promptBase + (modoSchema === 'nenhum'
+        ? '\n\nResponda somente com um objeto JSON válido com estas chaves: ' + Object.keys(SCHEMA.properties).join(', ') + '.'
+        : '');
+      const body = {
+        model,
+        store: false,
+        input: [
+          { type: 'image', data, mime_type: 'image/jpeg' },
+          { type: 'text', text: texto }
+        ]
+      };
+      if (comThinking) body.generation_config = { thinking_level: 'low' };
+      if (modoSchema !== 'nenhum') {
+        body.response_format = {
+          type: 'text',
+          mime_type: 'application/json',
+          schema: modoSchema === 'estrito' ? clonarSchema(SCHEMA) : prepararSchemaGemini(SCHEMA)
+        };
+      }
+      return fetchJsonTimeout(endpoint, { method: 'POST', headers, body: JSON.stringify(body) }, timeoutMs);
+    };
+
+    let comThinking = true;
+    let res = await enviar('estrito', comThinking);
+    if (res.r.status === 400 && /thinking_level|thinking|generation_config/i.test(JSON.stringify(res.j))) {
+      comThinking = false;
+      res = await enviar('estrito', comThinking);
+    }
+    if (res.r.status === 400 && /response_format|response_json_schema|schema|additionalProperties|enum/i.test(JSON.stringify(res.j))) {
+      res = await enviar('limpo', comThinking);
+      if (res.r.status === 400 && /response_format|response_json_schema|schema|enum/i.test(JSON.stringify(res.j))) {
+        res = await enviar('nenhum', comThinking);
+      }
+    }
+    return res;
+  }
+
+  async function lerComGemini(canvas, progresso, ocrFallback) {
+    const key = getGemKey();
+    progresso('Preparando leitura com Gemini…');
+    const { escada, modeloPreferido } = await resolverModelosGemini(key, getGemModel(), { timeoutMs: 1500 });
+    const data = canvas.toDataURL('image/jpeg', 0.85).split(',')[1];
+    const promptBase = promptClaude();
+    const falhas = [];
+
+    for (let i = 0; i < escada.length; i++) {
+      const model = escada[i];
+      progresso(i === 0 ? `Enviando foto para ${model}…` : `Tentando ${model}…`);
+      const timeoutMs = /argon|carbon|pro/i.test(model) ? 24000 : 16000;
+      const { r, j, timedOut } = await chamarGeminiInteractions(model, key, promptBase, data, timeoutMs);
+
+      if (!r.ok) {
+        const msg = (j && j.error && j.error.message) || r.statusText || '';
+        if (ehErroChaveGemini(r.status, msg)) {
+          lsSet(KEY_GEM_CAT, '');
+          throw new Error('Chave do Gemini inválida, bloqueada ou sem permissão na API. Confira em Mais → Backup e ajustes.');
+        }
+        if (!ehErroDeModeloOuSobrecarga(r.status, msg)) {
+          throw new Error(`Erro do Gemini (${r.status}): ${String(msg).slice(0, 200)}`);
+        }
+        const motivo = resumoMotivoGemini(r, j, timedOut);
+        falhas.push({ model, status: r.status, motivo });
+        if (i + 1 < escada.length) progresso(`${model} indisponível (${motivo}), descendo para ${escada[i + 1]}…`);
+        continue;
+      }
+
+      if (j && j.status === 'failed') {
+        const motivo = (j.errors && j.errors[0] && j.errors[0].message) || 'falha interna';
+        falhas.push({ model, status: 500, motivo: String(motivo).slice(0, 60) });
+        if (i + 1 < escada.length) progresso(`${model} falhou, descendo para ${escada[i + 1]}…`);
+        continue;
+      }
+
+      const txt = extrairTextoInteractions(j);
+      if (!txt.trim()) {
+        falhas.push({ model, status: 500, motivo: 'resposta vazia' });
+        if (i + 1 < escada.length) progresso(`${model} respondeu vazio, descendo para ${escada[i + 1]}…`);
+        continue;
+      }
+
+      try {
+        const quemSafe = /^[a-z0-9._-]+$/i.test(model) ? `Gemini (${model})` : 'Gemini';
+        const aviso = model !== modeloPreferido
+          ? `Respondido por ${model}, porque ${modeloPreferido} estava indisponível/sobrecarregado${falhas[0] ? ` (${falhas[0].motivo})` : ''}.`
+          : '';
+        return mapear(txt, quemSafe, aviso);
+      } catch (e) {
+        falhas.push({ model, status: 500, motivo: 'JSON inválido/incompleto' });
+        if (i + 1 < escada.length) progresso(`${model} devolveu JSON incompleto, descendo para ${escada[i + 1]}…`);
+      }
+    }
+
+    if (falhas.length && falhas.every((f) => f.status === 403 || f.status === 401)) {
+      throw new Error('A chave do Gemini não teve permissão em nenhum modelo disponível. Confira no Google AI Studio ou em Mais → Backup e ajustes.');
+    }
+
+    const resumoFalhas = falhas.slice(0, 3).map((f) => `${f.model}: ${f.motivo}`).join('; ');
+    if (typeof ocrFallback === 'function') {
+      progresso('Gemini indisponível agora, tentando OCR local…');
+      try {
+        const resOcr = await ocrFallback();
+        resOcr.aviso = `Gemini indisponível/sobrecarregado (${resumoFalhas}). Leitura feita offline via OCR local — confira cada campo.`;
+        return resOcr;
+      } catch (ocrErr) {
+        throw new Error(`Gemini indisponível (${resumoFalhas}) e o OCR offline também falhou: ${ocrErr.message || ocrErr}`);
+      }
+    }
+    throw new Error(`Todos os modelos Gemini falharam (${resumoFalhas}). Tente novamente em instantes.`);
+  }
+
+  async function testarGemini(chaveOpcional) {
+    const key = String(chaveOpcional != null ? chaveOpcional : getGemKey()).trim();
+    if (!key) throw new Error('Cole uma chave da API Gemini acima para testar.');
+    const { modelos, temArgon } = await atualizarCatalogoGemini(key, 10000);
+    return { modelos, temArgon };
   }
 
   /* ---------- OCR local ---------- */
@@ -324,7 +597,13 @@ Ids de torra: ${torras}.`;
     const img = await carregarImagem(file);
     const prov = provedor();
     if (prov === 'anthropic') return lerComClaude(redimensionar(img, 1568, false), progresso);
-    if (prov === 'gemini') return lerComGemini(redimensionar(img, 1568, false), progresso);
+    if (prov === 'gemini') {
+      return lerComGemini(
+        redimensionar(img, 1568, false),
+        progresso,
+        () => lerComOCR(redimensionar(img, 2000, true), progresso)
+      );
+    }
     return lerComOCR(redimensionar(img, 2000, true), progresso);
   }
 
@@ -335,21 +614,28 @@ Ids de torra: ${torras}.`;
     div.className = 'card'; div.style.marginTop = '12px';
     const temA = !!getKey(), temG = !!getGemKey(), prov = provedor();
     const escolhido = lsGet(KEY_PROV) || (temG && !temA ? 'gemini' : 'anthropic');
+    const atualA = getModel();
+    const atualGem = getGemModel();
+    const cacheCat = temG ? lerCatalogoCacheGemini(hashChaveCurto(getGemKey())) : null;
+    const topoCache = (cacheCat && cacheCat.modelos && cacheCat.modelos[0]) ? cacheCat.modelos[0] : '';
+    const gemOpcaoConhecida = MODELOS_GEMINI.some((m) => m.id === atualGem);
     div.innerHTML = `<h3>📷 Leitura de rótulos por IA</h3>
       <p class="text-2">Fotografe o pacote e a IA preenche o cadastro do grão. Escolha o provedor e cole a chave dele. Sem nenhuma chave, o app usa um OCR local, menos preciso. As chaves ficam salvas só neste aparelho, não vão para o backup e só são enviadas para o provedor escolhido.</p>
-      <p><span class="badge ${prov === 'ocr' ? '' : 'ok'}">Em uso: ${prov === 'anthropic' ? 'Claude' : prov === 'gemini' ? 'Gemini' : 'OCR local'}</span></p>
+      <p><span class="badge ${prov === 'ocr' ? '' : 'ok'}">Em uso: ${prov === 'anthropic' ? 'Claude' : prov === 'gemini' ? 'Gemini' : 'OCR local'}</span>${prov === 'gemini' ? ` <span class="badge">Modelo: ${escHtml(atualGem === GEM_AUTO ? (topoCache || ESCADA_GEMINI_PADRAO[0]) : atualGem)}</span>` : ''}</p>
       <label class="field"><span class="lbl">Provedor</span><select id="iaProv"><option value="anthropic" ${escolhido === 'anthropic' ? 'selected' : ''}>Claude (Anthropic)</option><option value="gemini" ${escolhido === 'gemini' ? 'selected' : ''}>Gemini (Google)</option></select></label>
       <div data-prov="anthropic">
         <label class="field"><span class="lbl">Chave da API Anthropic ${temA ? '<span class="badge ok">configurada</span>' : ''}</span><input type="password" id="apiKey" placeholder="${temA ? '•••••••• (deixe em branco para manter)' : 'sk-ant-…'}" autocomplete="off"><div class="help">Crie em console.anthropic.com → API Keys. Cobrado por uso.</div></label>
-        <label class="field"><span class="lbl">Modelo</span><select id="apiModelSel">${MODELOS.map((m) => `<option value="${m.id}" ${m.id === getModel() ? 'selected' : ''}>${m.nome}</option>`).join('')}<option value="_outro" ${MODELOS.some((m) => m.id === getModel()) ? '' : 'selected'}>Outro (digitar)</option></select></label>
-        <label class="field" id="apiOutroWrap"><span class="lbl">Id do modelo</span><input type="text" id="apiModel" value="${getModel()}" placeholder="ex.: claude-3-7-sonnet-latest"><div class="help">Use se a Anthropic lançar um modelo novo ou se preferir fixar uma versão específica.</div></label>
+        <label class="field"><span class="lbl">Modelo</span><select id="apiModelSel">${MODELOS.map((m) => `<option value="${m.id}" ${m.id === atualA ? 'selected' : ''}>${escHtml(m.nome)}</option>`).join('')}<option value="_outro" ${MODELOS.some((m) => m.id === atualA) ? '' : 'selected'}>Outro (digitar)</option></select></label>
+        <label class="field" id="apiOutroWrap"><span class="lbl">Id do modelo</span><input type="text" id="apiModel" value="${escHtml(atualA)}" placeholder="ex.: claude-3-7-sonnet-latest"><div class="help">Use se a Anthropic lançar um modelo novo ou se preferir fixar uma versão específica.</div></label>
       </div>
       <div data-prov="gemini">
-        <label class="field"><span class="lbl">Chave da API Gemini ${temG ? '<span class="badge ok">configurada</span>' : ''}</span><input type="password" id="gemKey" placeholder="${temG ? '•••••••• (deixe em branco para manter)' : 'AIza…'}" autocomplete="off"><div class="help">Crie em aistudio.google.com → Get API key. Há cota gratuita; no plano gratuito o Google pode usar as imagens enviadas para melhorar os modelos.</div></label>
-        <label class="field"><span class="lbl">Modelo</span><select id="gemModelSel">${MODELOS_GEMINI.map((m) => `<option value="${m.id}" ${m.id === getGemModel() ? 'selected' : ''}>${m.nome}</option>`).join('')}<option value="_outro" ${MODELOS_GEMINI.some((m) => m.id === getGemModel()) ? '' : 'selected'}>Outro (digitar)</option></select></label>
-        <label class="field" id="gemOutroWrap"><span class="lbl">Id do modelo</span><input type="text" id="gemModel" value="${getGemModel()}" placeholder="ex.: gemini-2.5-flash"><div class="help">Use se o Google lançar um modelo novo ou aposentar um da lista.</div></label>
+        <label class="field"><span class="lbl">Chave da API Gemini ${temG ? '<span class="badge ok">configurada</span>' : ''}</span><input type="password" id="gemKey" placeholder="${temG ? '•••••••• (deixe em branco para manter)' : 'AIza…'}" autocomplete="off"><div class="help">Crie em aistudio.google.com → Get API key. Há cota gratuita; no plano gratuito o Google pode usar o conteúdo enviado para melhorar os modelos. As imagens são enviadas com <code>store: false</code>.</div></label>
+        <label class="field"><span class="lbl">Modelo</span><select id="gemModelSel">${MODELOS_GEMINI.map((m) => `<option value="${m.id}" ${m.id === atualGem ? 'selected' : ''}>${escHtml(m.nome)}</option>`).join('')}<option value="_outro" ${gemOpcaoConhecida ? '' : 'selected'}>Outro (digitar)</option></select><div class="help">No modo <b>Automático</b>, toda tentativa começa sempre pelo modelo mais recente disponível para sua chave (${escHtml(topoCache || ESCADA_GEMINI_PADRAO[0])}), desce para versões anteriores/mais leves em caso de sobrecarga ou cota e recorre ao OCR local se todos falharem.</div></label>
+        <label class="field" id="gemOutroWrap"><span class="lbl">Id do modelo</span><input type="text" id="gemModel" value="${escHtml(atualGem === GEM_AUTO ? '' : atualGem)}" placeholder="ex.: gemini-4-hydrogen"><div class="help">Digite o id exato se quiser fixar outro modelo. Modelos aposentados (ex.: Gemini 2.x/3.5 Flash) voltam para o modo Automático. <code>gemini-4-argon</code> exige plano pago.</div></label>
+        <div class="row" style="margin:6px 0"><button type="button" class="btn sm" id="gemTest">Testar chave e atualizar modelos</button></div>
+        <div class="scan-status" id="gemTestSt" hidden></div>
       </div>
-      <div class="row"><button class="btn primary sm" id="apiSave">Salvar</button>${temA ? '<button class="btn sm danger" id="apiDel">Remover chave Anthropic</button>' : ''}${temG ? '<button class="btn sm danger" id="gemDel">Remover chave Gemini</button>' : ''}</div>`;
+      <div class="row"><button type="button" class="btn primary sm" id="apiSave">Salvar</button>${temA ? '<button type="button" class="btn sm danger" id="apiDel">Remover chave Anthropic</button>' : ''}${temG ? '<button type="button" class="btn sm danger" id="gemDel">Remover chave Gemini</button>' : ''}</div>`;
     root.appendChild(div);
     const q = (x) => div.querySelector(x);
     const sync = () => {
@@ -358,20 +644,72 @@ Ids de torra: ${torras}.`;
       q('#gemOutroWrap').hidden = q('#gemModelSel').value !== '_outro';
     };
     q('#iaProv').onchange = sync; q('#apiModelSel').onchange = sync; q('#gemModelSel').onchange = sync; sync();
+    q('#gemTest').onclick = async () => {
+      const btn = q('#gemTest');
+      const st = q('#gemTestSt');
+      const chave = q('#gemKey').value.trim() || getGemKey();
+      btn.disabled = true;
+      st.hidden = false;
+      st.className = 'scan-status';
+      st.textContent = 'Testando chave e buscando modelos Gemini disponíveis…';
+      try {
+        const { modelos, temArgon } = await testarGemini(chave);
+        const top = modelos.slice(0, 4).join(' → ');
+        const extra = modelos.length > 4 ? '…' : '';
+        const notaArgon = temArgon ? ' (Gemini 4 Argon disponível para plano pago)' : '';
+        st.className = 'scan-status ok';
+        st.textContent = `✓ Chave válida! Ordem automática: ${top}${extra}${notaArgon}.`;
+      } catch (err) {
+        st.className = 'scan-status err';
+        st.textContent = err && err.message ? err.message : String(err);
+      } finally {
+        btn.disabled = false;
+      }
+    };
     q('#apiSave').onclick = () => {
       lsSet(KEY_PROV, q('#iaProv').value);
       const k = q('#apiKey').value.trim(); if (k) lsSet(KEY_API, k);
       const m = q('#apiModelSel').value === '_outro' ? q('#apiModel').value.trim() : q('#apiModelSel').value;
       if (m) lsSet(KEY_MODEL, m);
-      const g = q('#gemKey').value.trim(); if (g) lsSet(KEY_GEM, g);
-      const gm = q('#gemModelSel').value === '_outro' ? q('#gemModel').value.trim() : q('#gemModelSel').value;
-      if (gm) lsSet(KEY_GEM_MODEL, gm);
-      lab.toast('Configuração da IA salva'); lab.render();
+      const antigaGem = getGemKey();
+      const g = q('#gemKey').value.trim();
+      if (g) {
+        lsSet(KEY_GEM, g);
+        if (g !== antigaGem) lsSet(KEY_GEM_CAT, '');
+      }
+      const gm = q('#gemModelSel').value === '_outro'
+        ? normalizarModeloGeminiId(q('#gemModel').value)
+        : q('#gemModelSel').value;
+      let migrou = false;
+      if (gm === GEM_AUTO) {
+        lsSet(KEY_GEM_MODEL, '');
+      } else if (gm && ehModeloGeminiLegado(gm)) {
+        lsSet(KEY_GEM_MODEL, '');
+        migrou = true;
+      } else if (gm) {
+        lsSet(KEY_GEM_MODEL, gm);
+      }
+      lab.toast(migrou ? 'Modelo legado atualizado para Automático' : 'Configuração da IA salva');
+      lab.render();
     };
     const del = q('#apiDel'); if (del) del.onclick = () => { lsSet(KEY_API, ''); lab.toast('Chave Anthropic removida'); lab.render(); };
-    const delG = q('#gemDel'); if (delG) delG.onclick = () => { lsSet(KEY_GEM, ''); lab.toast('Chave Gemini removida'); lab.render(); };
+    const delG = q('#gemDel'); if (delG) delG.onclick = () => {
+      lsSet(KEY_GEM, '');
+      lsSet(KEY_GEM_CAT, '');
+      lab.toast('Chave Gemini removida');
+      lab.render();
+    };
   }
   window.CafeLab.hooks.ajustes.push(cardAjustes);
 
-  window.CafeRotulo = { ler, interpretar, SCHEMA, provedor, temChave: () => provedor() !== 'ocr' };
+  window.CafeRotulo = {
+    ler,
+    interpretar,
+    SCHEMA,
+    provedor,
+    temChave: () => provedor() !== 'ocr',
+    testarGemini,
+    resolverModelosGemini,
+    modelosGemini: ESCADA_GEMINI_PADRAO.slice()
+  };
 })();
